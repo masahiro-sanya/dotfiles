@@ -1,0 +1,12 @@
+nodenv:
+  system
+  20.11.1
+* 20.19.5 (set by NODENV_VERSION environment variable)
+  22.20.0
+pyenv:
+  system
+* 3.11.0 (set by /Users/sanyamasahiro/.anyenv/envs/pyenv/version)
+  3.12.2
+rbenv:
+  system
+* 3.4.6 (set by /Users/sanyamasahiro/.anyenv/envs/rbenv/version)

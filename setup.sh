@@ -1,0 +1,133 @@
+#!/bin/bash
+set -euo pipefail
+
+DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKUP_DIR="$DOTFILES_DIR/backup/$(date +%Y%m%d_%H%M%S)"
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+info()  { echo -e "${GREEN}[OK]${NC} $1"; }
+warn()  { echo -e "${YELLOW}[SKIP]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+backup_and_link() {
+    local src="$1"
+    local dest="$2"
+
+    if [ ! -e "$src" ]; then
+        error "Source not found: $src"
+        return
+    fi
+
+    # If destination is already a symlink to the right place, skip
+    if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+        warn "Already linked: $dest"
+        return
+    fi
+
+    # Backup existing file/dir
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+        mkdir -p "$BACKUP_DIR"
+        mv "$dest" "$BACKUP_DIR/$(basename "$dest")"
+        warn "Backed up: $dest -> $BACKUP_DIR/$(basename "$dest")"
+    fi
+
+    # Create parent directory if needed
+    mkdir -p "$(dirname "$dest")"
+
+    ln -s "$src" "$dest"
+    info "Linked: $dest -> $src"
+}
+
+echo "=== dotfiles setup ==="
+echo "Dotfiles dir: $DOTFILES_DIR"
+echo ""
+
+# --- Shell ---
+echo "--- Shell ---"
+backup_and_link "$DOTFILES_DIR/shell/.zshrc"    "$HOME/.zshrc"
+backup_and_link "$DOTFILES_DIR/shell/.zprofile"  "$HOME/.zprofile"
+backup_and_link "$DOTFILES_DIR/shell/.zshenv"    "$HOME/.zshenv"
+
+# --- Git ---
+echo "--- Git ---"
+backup_and_link "$DOTFILES_DIR/git/.gitconfig"        "$HOME/.gitconfig"
+backup_and_link "$DOTFILES_DIR/git/.gitignore_global"  "$HOME/.gitignore_global"
+
+# --- WezTerm ---
+echo "--- WezTerm ---"
+backup_and_link "$DOTFILES_DIR/terminal/wezterm/wezterm.lua"  "$HOME/.config/wezterm/wezterm.lua"
+backup_and_link "$DOTFILES_DIR/terminal/wezterm/keybinds.lua" "$HOME/.config/wezterm/keybinds.lua"
+
+# --- Neovim ---
+echo "--- Neovim ---"
+backup_and_link "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
+
+# --- VS Code ---
+echo "--- VS Code ---"
+VSCODE_USER="$HOME/Library/Application Support/Code/User"
+if [ -d "$VSCODE_USER" ]; then
+    backup_and_link "$DOTFILES_DIR/editor/vscode/settings.json" "$VSCODE_USER/settings.json"
+    [ -f "$DOTFILES_DIR/editor/vscode/keybindings.json" ] && \
+        backup_and_link "$DOTFILES_DIR/editor/vscode/keybindings.json" "$VSCODE_USER/keybindings.json"
+else
+    warn "VS Code not installed, skipping"
+fi
+
+# --- Cursor ---
+echo "--- Cursor ---"
+CURSOR_USER="$HOME/Library/Application Support/Cursor/User"
+if [ -d "$CURSOR_USER" ]; then
+    backup_and_link "$DOTFILES_DIR/editor/cursor/settings.json" "$CURSOR_USER/settings.json"
+    [ -f "$DOTFILES_DIR/editor/cursor/keybindings.json" ] && \
+        backup_and_link "$DOTFILES_DIR/editor/cursor/keybindings.json" "$CURSOR_USER/keybindings.json"
+else
+    warn "Cursor not installed, skipping"
+fi
+
+# --- Claude Code ---
+echo "--- Claude Code ---"
+backup_and_link "$DOTFILES_DIR/claude/settings.json"    "$HOME/.claude/settings.json"
+backup_and_link "$DOTFILES_DIR/claude/CLAUDE.md"         "$HOME/.claude/CLAUDE.md"
+backup_and_link "$DOTFILES_DIR/claude/keybindings.json"  "$HOME/.claude/keybindings.json"
+backup_and_link "$DOTFILES_DIR/claude/statusline.sh"     "$HOME/.claude/statusline.sh"
+backup_and_link "$DOTFILES_DIR/claude/claude.json"       "$HOME/.claude.json"
+
+# Claude Code commands (link each file, not the dir)
+echo "--- Claude Code Commands ---"
+mkdir -p "$HOME/.claude/commands/sc"
+for cmd in "$DOTFILES_DIR/claude/commands/sc/"*.md; do
+    [ -f "$cmd" ] && backup_and_link "$cmd" "$HOME/.claude/commands/sc/$(basename "$cmd")"
+done
+
+# Claude Code hooks
+echo "--- Claude Code Hooks ---"
+mkdir -p "$HOME/.claude/hooks"
+for hook in "$DOTFILES_DIR/claude/hooks/"*.sh; do
+    [ -f "$hook" ] && backup_and_link "$hook" "$HOME/.claude/hooks/$(basename "$hook")"
+done
+
+# --- mise ---
+echo "--- mise ---"
+backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
+
+echo ""
+echo "=== Setup complete ==="
+echo ""
+echo "Next steps:"
+echo "  1. Install Homebrew:  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+echo "  2. Install packages:  brew bundle --file=$DOTFILES_DIR/Brewfile"
+echo "  3. Install anyenv:    anyenv install --init && anyenv install nodenv && anyenv install pyenv && anyenv install rbenv"
+echo "  4. Install Node:      nodenv install 20.19.5 && nodenv global 20.19.5"
+echo "  5. Install Python:    pyenv install 3.11.0 && pyenv global 3.11.0"
+echo "  6. Install Ruby:      rbenv install 3.4.6 && rbenv global 3.4.6"
+echo "  7. Install mise tools: mise install"
+echo "  8. Auth GitHub:       gh auth login"
+echo "  9. Auth GCP:          gcloud auth login && gcloud auth application-default login"
+echo " 10. Install Cursor extensions: cat $DOTFILES_DIR/editor/cursor/extensions.txt | xargs -L1 cursor --install-extension"
+echo " 11. Claude Code settings.local.json は手動でコピー（許可ルールを確認の上）:"
+echo "     cp $DOTFILES_DIR/claude/settings.local.json ~/.claude/settings.local.json"

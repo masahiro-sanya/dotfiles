@@ -1,0 +1,52 @@
+# Secrets / credentials
+*.pem
+*.key
+*credentials*
+*secret*
+*token*
+
+# SSH private keys
+ssh/id_*
+!ssh/*.pub
+
+# Claude Code
+claude/settings.local.json
+claude/projects/
+claude/statsig/
+claude/stats-cache.json
+claude/todos/
+claude/shell-snapshots/
+claude/cache/
+claude/logs/
+claude/debug/
+claude/sessions/
+claude/history.jsonl
+claude/file-history/
+claude/telemetry/
+claude/ide/
+claude/paste-cache/
+claude/backups/
+claude/session-env/
+claude/tasks/
+claude/agents/
+
+# AWS / GCP
+aws/credentials
+aws/sso/
+gcloud/
+
+# Docker
+docker/
+
+# GitHub CLI tokens
+gh/hosts.yml
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Editor workspace state
+editor/vscode/workspaceStorage/
+editor/cursor/workspaceStorage/
