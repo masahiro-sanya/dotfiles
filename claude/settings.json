@@ -10,41 +10,13 @@
       "Bash(git clone:*)",
       "Bash(git apply)",
       "Bash(claude mcp:*)",
-      "Read(//Users/sanyamasahiro/Desktop/**)",
-      "Read(//Users/sanyamasahiro/Downloads/**)",
-      "Read(//Users/sanyamasahiro/src/palmu/**)",
-      "Read(//Users/sanyamasahiro/.claude/**)",
-      "Read(//private/tmp/**)",
-      "mcp__notion__notion-fetch",
-      "mcp__notion__notion-create-pages",
-      "mcp__notion__notion-update-page",
-      "mcp__drawio__open_drawio_mermaid",
-      "mcp__drawio__open_drawio_xml",
       "WebSearch",
-      "WebFetch(domain:zenn.dev)",
-      "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.drawio.com)",
-      "WebFetch(domain:blog.serverworks.co.jp)",
-      "mcp__plugin_slack_slack__slack_search_public",
-      "Skill(create-design-doc)",
-      "Skill(create-design-doc:*)",
-      "mcp__gcloud__run_gcloud_command",
       "Bash(gcloud logging:*)",
       "Bash(git checkout:*)",
       "Bash(git pull:*)",
-      "Bash(git branch:*)",
-      "mcp__plugin_slack_slack__slack_send_message",
-      "mcp__notion__notion-search",
-      "mcp__plugin_slack_slack__slack_read_thread"
+      "Bash(git branch:*)"
     ],
-    "defaultMode": "auto",
-    "additionalDirectories": [
-      "/Users/sanyamasahiro/src/palmu/palmu-api-go/.git",
-      "/private/tmp",
-      "/Users/sanyamasahiro/Desktop",
-      "/private/tmp/palmu-conflict-check",
-      "/Users/sanyamasahiro/src/palmu/palmu-devops/.claude"
-    ]
+    "defaultMode": "auto"
   },
   "enableAllProjectMcpServers": false,
   "hooks": {
@@ -76,57 +48,5 @@
     "command": "~/.claude/statusline.sh",
     "padding": 1
   },
-  "enabledPlugins": {
-    "light-skills-updater@light-skills": true,
-    "github-analyze-member@light-skills": true,
-    "fix-pr-reviews@light-skills": true,
-    "member-report-manager@light-skills": true,
-    "gcp-monitoring@light-skills": true,
-    "claude-code-toolkit@light-skills": true,
-    "claude-session-manager@light-skills": true,
-    "stack-pr-merge@light-skills": true,
-    "palmu-ai-dashboard-collector@light-skills": true,
-    "slack-tools@light-skills": true,
-    "quarterly-evaluation-generator@light-skills": true,
-    "infra-check@light-skills": true,
-    "gogcli@light-skills": true,
-    "slack@claude-plugins-official": true,
-    "offboarding-checker@light-skills": true,
-    "gcp-prod-guard@light-skills": true,
-    "konishi@light-skills": true,
-    "release-integrity-checker@light-skills": true,
-    "create-slides@light-skills": true,
-    "gcp-log-tools@light-skills": true,
-    "gopls-lsp@claude-plugins-official": true,
-    "palmu-api-doc@light-skills": true,
-    "check-release-pr@light-skills": true,
-    "review-testcase@light-skills": true,
-    "retrospective-tools@light-skills": true,
-    "review-gaiyosho@light-skills": true,
-    "run-playwright@light-skills": true
-  },
-  "extraKnownMarketplaces": {
-    "claude-plugins-official": {
-      "source": {
-        "source": "github",
-        "repo": "anthropics/claude-plugins-official"
-      }
-    },
-    "palmu-ai-dashboard": {
-      "source": {
-        "source": "github",
-        "repo": "light-inc/palmu-ai-dashboard"
-      }
-    },
-    "light-skills": {
-      "source": {
-        "source": "github",
-        "repo": "light-inc/light-skills"
-      }
-    }
-  },
-  "alwaysThinkingEnabled": true,
-  "feedbackSurveyState": {
-    "lastShownTime": 1754086842111
-  }
+  "alwaysThinkingEnabled": true
 }
