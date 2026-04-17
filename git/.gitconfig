@@ -1,23 +1,10 @@
-# This is Git's per-user configuration file.
 [user]
 	name = masahiro-sanya
-	email = masahiro.sanya@light-inc.com
-# Please adapt and uncomment the following lines:
-#	name = 山谷昌弘
-#	email = sanyamasahiro@masahirosanya.local
+	# email is set per-machine via setup.sh
 [init]
 	defaultBranch = main
 [core]
-	excludesfile = /Users/sanyamasahiro/.gitignore_global
-[difftool "sourcetree"]
-	cmd = opendiff \"$LOCAL\" \"$REMOTE\"
-	path = 
-[mergetool "sourcetree"]
-	cmd = /Applications/Sourcetree.app/Contents/Resources/opendiff-w.sh \"$LOCAL\" \"$REMOTE\" -ancestor \"$BASE\" -merge \"$MERGED\"
-	trustExitCode = true
-[commit]
-	template = /Users/sanyamasahiro/.stCommitMsg
-
+	excludesfile = ~/.gitignore_global
 [alias]
     tree = log --graph --pretty=format:'%x09%C(auto) %h %Cgreen %ar %Creset%x09by"%C(cyan ul)%an%Creset" %x09%C(auto)%s %d'
 

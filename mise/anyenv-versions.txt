@@ -5,8 +5,8 @@ nodenv:
   22.20.0
 pyenv:
   system
-* 3.11.0 (set by /Users/sanyamasahiro/.anyenv/envs/pyenv/version)
+* 3.11.0 (set by ~/.anyenv/envs/pyenv/version)
   3.12.2
 rbenv:
   system
-* 3.4.6 (set by /Users/sanyamasahiro/.anyenv/envs/rbenv/version)
+* 3.4.6 (set by ~/.anyenv/envs/rbenv/version)

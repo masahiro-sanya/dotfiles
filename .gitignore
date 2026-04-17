@@ -11,6 +11,7 @@ ssh/id_*
 
 # Claude Code
 claude/settings.local.json
+claude/claude.json
 claude/projects/
 claude/statsig/
 claude/stats-cache.json
@@ -49,4 +50,6 @@ gh/hosts.yml
 
 # Editor workspace state
 editor/vscode/workspaceStorage/
-editor/cursor/workspaceStorage/
+
+# Project-local Claude Code settings
+.claude/
