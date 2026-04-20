@@ -1,5 +1,4 @@
 return {
-  { "nvim-neo-tree/neo-tree.nvim", enabled = false },
   {
     "folke/snacks.nvim",
     opts = {
@@ -18,11 +17,11 @@ return {
     dependencies = { "nvim-tree/nvim-web-devicons" },
     keys = {
       {
-        "<leader>e",
+        "<leader>o",
         function()
           require("oil").open()
         end,
-        desc = "Open parent directory",
+        desc = "Open parent directory (oil)",
       },
     },
     opts = {
