@@ -15,63 +15,34 @@ macOS 環境の設定ファイル群。
 | `mise/` | mise (ランタイムバージョン管理) 設定 |
 | `Brewfile` | Homebrew パッケージ一覧 |
 
-## セットアップ
+## セットアップ（新PC）
 
-### 1. Homebrew をインストール
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-### 2. リポジトリをクローン
+### ワンライナー
 
 ```bash
-git clone https://github.com/masahiro-sanya/dotfiles.git ~/src/dotfiles
-cd ~/src/dotfiles
+curl -fsSL https://raw.githubusercontent.com/masahiro-sanya/dotfiles/main/bootstrap.sh | bash
 ```
 
-### 3. シンボリックリンクを作成
+これで以下を一括実行: Xcode CLT 確認 → Homebrew → dotfiles clone → Prezto → symlink → `brew bundle` → anyenv + 各ランタイム → `mise install`。
 
-```bash
-bash setup.sh
-```
-
-各設定ファイルのシンボリックリンクが作成されます。既存ファイルは `backup/` に自動バックアップされます。
-
-git user.email が未設定の場合、対話的に入力を求められます。
-
-### 4. パッケージをインストール
-
-```bash
-brew bundle --file=~/src/dotfiles/Brewfile
-```
-
-### 5. ランタイムをセットアップ
-
-```bash
-# anyenv
-anyenv install --init
-anyenv install nodenv && anyenv install pyenv && anyenv install rbenv
-
-# 各言語
-nodenv install 20.19.5 && nodenv global 20.19.5
-pyenv install 3.11.0 && pyenv global 3.11.0
-rbenv install 3.4.6 && rbenv global 3.4.6
-
-# mise
-mise install
-```
-
-### 6. 認証
+### 残りの手動ステップ
 
 ```bash
 gh auth login
 gcloud auth login && gcloud auth application-default login
 ```
 
-### 7. Claude Code (任意)
+Claude Code のマシン固有設定:
+- `~/.claude/settings.local.json` を旧マシンからコピー（plugin/permission/MCP）
+- `claude mcp add ...` で MCP サーバ再登録（旧マシンの `~/.claude.json` 参照）
 
-`claude/settings.local.json` はマシン固有の設定（許可ルール・プラグイン等）のため、手動で設定してください。
+### 個別実行したい場合
+
+```bash
+make link    # シンボリックリンクのみ
+make brew    # brew bundle のみ
+make all     # link + brew + mise install
+```
 
 ## 設定の更新
 
