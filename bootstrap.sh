@@ -72,15 +72,25 @@ step "Installing mise tools"
 eval "$(mise activate bash)"
 mise install -y
 
-# 9. 残り（手動）
+# 9. Claude Code MCP servers (claude CLI が必要)
+if command -v claude &>/dev/null; then
+  step "Registering Claude Code MCP servers"
+  bash "$DOTFILES_DIR/claude/mcp-servers.sh" || note "MCP register skipped/failed (re-run manually: bash $DOTFILES_DIR/claude/mcp-servers.sh)"
+else
+  note "claude CLI not found — skip MCP register. After installing claude, run: bash $DOTFILES_DIR/claude/mcp-servers.sh"
+fi
+
+# 10. 残り（手動）
 step "Bootstrap complete"
 cat <<'EOF'
 
 残りの手動ステップ:
   1. gh auth login
   2. gcloud auth login && gcloud auth application-default login
-  3. ~/.claude/settings.local.json を旧マシンからコピー（plugin/permission/MCP）
-  4. claude mcp add ...（MCPサーバ再登録 / 旧マシンの ~/.claude.json 参照）
+  3. ~/.claude/settings.local.json を旧マシンからコピー（plugin/permission の機械固有設定）
+  4. Claude Code 起動後、/plugin で marketplace プラグインを導入
+     （Slack / palmu-api-doc / Google Drive など）
+  5. notion MCP は初回接続時にブラウザで OAuth 認証
 
 新シェルを開く: exec zsh -l
 EOF
