@@ -72,15 +72,23 @@ step "Installing mise tools"
 eval "$(mise activate bash)"
 mise install -y
 
-# 9. Claude Code MCP servers (claude CLI が必要)
+# 9. Claude Code CLI (公式 installer。~/.local/bin/claude にインストール)
+if ! command -v claude &>/dev/null && [ ! -x "$HOME/.local/bin/claude" ]; then
+  step "Installing Claude Code CLI"
+  curl -fsSL https://claude.ai/install.sh | bash
+fi
+# 現セッションで claude を使えるように PATH を補強（次の MCP ステップで必要）
+export PATH="$HOME/.local/bin:$PATH"
+
+# 10. Claude Code MCP servers
 if command -v claude &>/dev/null; then
   step "Registering Claude Code MCP servers"
   bash "$DOTFILES_DIR/claude/mcp-servers.sh" || note "MCP register skipped/failed (re-run manually: bash $DOTFILES_DIR/claude/mcp-servers.sh)"
 else
-  note "claude CLI not found — skip MCP register. After installing claude, run: bash $DOTFILES_DIR/claude/mcp-servers.sh"
+  note "claude CLI install failed — re-run manually: curl -fsSL https://claude.ai/install.sh | bash"
 fi
 
-# 10. 残り（手動）
+# 11. 残り（手動）
 step "Bootstrap complete"
 cat <<'EOF'
 

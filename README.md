@@ -23,18 +23,18 @@ macOS 環境の設定ファイル群。
 curl -fsSL https://raw.githubusercontent.com/masahiro-sanya/dotfiles/main/bootstrap.sh | bash
 ```
 
-これで以下を一括実行: Xcode CLT 確認 → Homebrew → dotfiles clone → Prezto → symlink → `brew bundle` → anyenv + 各ランタイム → `mise install` → Claude Code MCP 登録（claude CLI 導入済みの場合）。
+これで以下を一括実行: Xcode CLT 確認 → Homebrew → dotfiles clone → Prezto → symlink → `brew bundle` → anyenv + 各ランタイム → `mise install` → Claude Code CLI インストール → MCP サーバ登録。
 
-### 残りの手動ステップ
+### 残りの手動ステップ（対話/認証が必要なもの）
 
 ```bash
 gh auth login
 gcloud auth login && gcloud auth application-default login
+claude  # 初回起動でブラウザログイン
 ```
 
 Claude Code のマシン固有設定:
 - `~/.claude/settings.local.json` を旧マシンからコピー（plugin/permission の機械固有設定）
-- `bash claude/mcp-servers.sh` で MCP サーバ再登録（bootstrap.sh で自動実行済の場合は不要）
 - Claude Code 起動後、`/plugin` から marketplace プラグインを導入（Slack / palmu-api-doc / Google Drive など）
 - notion MCP は初回接続時にブラウザで OAuth 認証
 
