@@ -10,6 +10,7 @@ return {
           },
         },
       },
+      image = { enabled = false },
     },
   },
   {
