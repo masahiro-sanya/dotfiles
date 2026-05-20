@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "afplay /System/Library/Sounds/Glass.aiff &"
+            "command": "bash ~/.claude/hooks/claude-stop-notify.sh"
           }
         ]
       }
