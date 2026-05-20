@@ -26,8 +26,6 @@ return {
         "json-lsp",
         -- Docker
         "hadolint",
-        -- Markdown
-        "markdownlint-cli2",
       },
     },
   },
