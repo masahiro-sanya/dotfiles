@@ -52,6 +52,7 @@ echo "--- Shell ---"
 backup_and_link "$DOTFILES_DIR/shell/.zshrc"    "$HOME/.zshrc"
 backup_and_link "$DOTFILES_DIR/shell/.zprofile"  "$HOME/.zprofile"
 backup_and_link "$DOTFILES_DIR/shell/.zshenv"    "$HOME/.zshenv"
+backup_and_link "$DOTFILES_DIR/shell/.npmrc"     "$HOME/.npmrc"
 
 # --- Git ---
 echo "--- Git ---"
@@ -84,6 +85,15 @@ if [ -d "$VSCODE_USER" ]; then
         backup_and_link "$DOTFILES_DIR/editor/vscode/keybindings.json" "$VSCODE_USER/keybindings.json"
 else
     warn "VS Code not installed, skipping"
+fi
+
+# --- Cursor ---
+echo "--- Cursor ---"
+CURSOR_USER="$HOME/Library/Application Support/Cursor/User"
+if [ -d "$CURSOR_USER" ]; then
+    backup_and_link "$DOTFILES_DIR/editor/cursor/settings.json" "$CURSOR_USER/settings.json"
+else
+    warn "Cursor not installed, skipping"
 fi
 
 # --- Claude Code ---

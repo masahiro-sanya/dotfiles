@@ -61,3 +61,6 @@ if command -v eza >/dev/null 2>&1; then
   alias la='eza -la --git --group-directories-first'
   alias lt='eza --tree --level=2 --group-directories-first'
 fi
+
+# サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
+export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
