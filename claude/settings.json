@@ -62,5 +62,7 @@
     "command": "~/.claude/statusline.sh",
     "padding": 1
   },
-  "alwaysThinkingEnabled": true
+  "alwaysThinkingEnabled": true,
+  "theme": "dark",
+  "skipAutoPermissionPrompt": true
 }
