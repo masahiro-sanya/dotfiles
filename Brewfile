@@ -1,6 +1,5 @@
 tap "dagger/tap"
 tap "hashicorp/tap"
-tap "homebrew/cask-fonts"
 tap "laishulu/homebrew"
 brew "anyenv"
 brew "atlas"
