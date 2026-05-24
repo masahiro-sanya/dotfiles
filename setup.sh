@@ -49,10 +49,11 @@ echo ""
 
 # --- Shell ---
 echo "--- Shell ---"
-backup_and_link "$DOTFILES_DIR/shell/.zshrc"    "$HOME/.zshrc"
-backup_and_link "$DOTFILES_DIR/shell/.zprofile"  "$HOME/.zprofile"
-backup_and_link "$DOTFILES_DIR/shell/.zshenv"    "$HOME/.zshenv"
-backup_and_link "$DOTFILES_DIR/shell/.npmrc"     "$HOME/.npmrc"
+backup_and_link "$DOTFILES_DIR/shell/.zshrc"      "$HOME/.zshrc"
+backup_and_link "$DOTFILES_DIR/shell/.zprofile"   "$HOME/.zprofile"
+backup_and_link "$DOTFILES_DIR/shell/.zshenv"     "$HOME/.zshenv"
+backup_and_link "$DOTFILES_DIR/shell/.zpreztorc"  "$HOME/.zpreztorc"
+backup_and_link "$DOTFILES_DIR/shell/.npmrc"      "$HOME/.npmrc"
 
 # --- Git ---
 echo "--- Git ---"
