@@ -62,7 +62,18 @@
     "command": "~/.claude/statusline.sh",
     "padding": 1
   },
+  "extraKnownMarketplaces": {
+    "light-skills": {
+      "source": {
+        "source": "github",
+        "repo": "light-inc/light-skills"
+      }
+    }
+  },
   "alwaysThinkingEnabled": true,
   "theme": "dark",
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "enabledPlugins": {
+    "palmu-ai-dashboard-collector@light-skills": true
+  }
 }
