@@ -35,7 +35,8 @@ claude  # 初回起動でブラウザログイン
 
 Claude Code のマシン固有設定:
 - `~/.claude/settings.local.json` を旧マシンからコピー（plugin/permission の機械固有設定）
-- Claude Code 起動後、`/plugin` から marketplace プラグインを導入（Slack / palmu-api-doc / Google Drive など）
+- Slack MCP は `mcp-servers.sh` が公式プラグイン `slack@claude-plugins-official` を自動インストール。Claude Code 起動後、初回接続でブラウザ OAuth（light-inc-com ワークスペース）→ 認証後に再起動で有効化
+- light-skills のプラグイン（palmu-api-doc など）は light-skills リポ側で導入
 - notion MCP は初回接続時にブラウザで OAuth 認証
 
 ### 個別実行したい場合
