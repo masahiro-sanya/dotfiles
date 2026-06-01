@@ -11,7 +11,7 @@ macOS 環境の設定ファイル群。
 | `terminal/wezterm/` | WezTerm 設定 |
 | `nvim/` | Neovim (LazyVim) 設定 |
 | `editor/vscode/` | VS Code 設定 |
-| `claude/` | Claude Code 設定 (settings, hooks, commands) |
+| `claude/` | Claude Code 設定 (settings, hooks, commands, skills) |
 | `mise/` | mise (ランタイムバージョン管理) 設定 |
 | `Brewfile` | Homebrew パッケージ一覧 |
 

@@ -119,6 +119,13 @@ for hook in "$DOTFILES_DIR/claude/hooks/"*.sh; do
     [ -f "$hook" ] && backup_and_link "$hook" "$HOME/.claude/hooks/$(basename "$hook")"
 done
 
+# Claude Code skills (link each skill dir; plugin-provided skills are managed by the marketplace, not here)
+echo "--- Claude Code Skills ---"
+mkdir -p "$HOME/.claude/skills"
+for skill in "$DOTFILES_DIR/claude/skills/"*/; do
+    [ -d "$skill" ] && backup_and_link "${skill%/}" "$HOME/.claude/skills/$(basename "${skill%/}")"
+done
+
 # --- mise ---
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
