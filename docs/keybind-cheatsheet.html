@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WezTerm + Neovim キーバインド チートシート</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --accent3: #d2a8ff;
+    --accent4: #f0883e;
+    --key-bg: #1f2937;
+    --key-border: #374151;
+    --highlight: #ffa65720;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 20px;
+  }
+
+  /* Search bar */
+  .search-container {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg);
+    padding: 12px 0 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  #search {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--text-muted); }
+  .search-count {
+    font-size: 13px;
+    color: var(--text-muted);
+    min-width: 80px;
+    text-align: right;
+  }
+
+  /* Tab navigation */
+  .tab-nav {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 8px 20px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .tab-btn:hover { border-color: var(--accent); color: var(--text); }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Page title */
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 20px;
+  }
+
+  /* Sections */
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    border-bottom: 1px solid var(--border);
+  }
+  .wezterm-section .section-header { color: var(--accent); background: #58a6ff10; }
+  .neovim-section .section-header { color: var(--accent2); background: #3fb95010; }
+  .vim-section .section-header { color: var(--accent3); background: #d2a8ff10; }
+
+  /* Table rows */
+  .row {
+    display: flex;
+    align-items: baseline;
+    padding: 5px 16px;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  .row:nth-child(even) { background: #ffffff04; }
+  .row:hover { background: #ffffff0a; }
+  .row.highlight { background: var(--highlight) !important; }
+  .row.hidden { display: none; }
+  .key {
+    flex-shrink: 0;
+    width: 180px;
+    font-family: "SF Mono", "Fira Code", "Ricty Diminished", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent4);
+  }
+  .key kbd {
+    background: var(--key-bg);
+    border: 1px solid var(--key-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: #e6edf3;
+    white-space: nowrap;
+  }
+  .desc {
+    flex: 1;
+    color: var(--text);
+  }
+
+  /* Leader badge */
+  .leader-info {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+  .leader-info kbd {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  /* Highlight match */
+  mark {
+    background: #f0883e60;
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  /* Print */
+  @media print {
+    .search-container, .tab-nav { display: none; }
+    .tab-content { display: block !important; }
+    body { background: #fff; color: #111; padding: 10px; }
+    .section { border: 1px solid #ccc; break-inside: avoid; }
+    .section-header { background: #f5f5f5 !important; color: #333 !important; }
+    .row { color: #111; }
+    .key { color: #c45000; }
+    .desc { color: #111; }
+  }
+
+  /* Responsive */
+  @media (max-width: 500px) {
+    .grid { grid-template-columns: 1fr; }
+    .key { width: 140px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>WezTerm + Neovim チートシート</h1>
+<p class="subtitle">Cmd+F またはフィルター検索でキーバインドを素早く検索</p>
+
+<div class="search-container">
+  <div class="search-box">
+    <input type="text" id="search" placeholder="キーバインドや操作名で検索... (例: pane, コピー, gd)" autofocus>
+    <span class="search-count" id="count"></span>
+  </div>
+</div>
+
+<div class="tab-nav">
+  <button class="tab-btn active" data-tab="wezterm">WezTerm</button>
+  <button class="tab-btn" data-tab="neovim">Neovim (LazyVim)</button>
+  <button class="tab-btn" data-tab="vim">Vim 基本操作</button>
+  <button class="tab-btn" data-tab="all">全て表示</button>
+</div>
+
+<!-- ===== WezTerm ===== -->
+<div class="tab-content active" id="tab-wezterm">
+  <div class="leader-info">Leader キー: <kbd>Ctrl+q</kbd> <span style="color:var(--text-muted)">(タイムアウト 2秒)</span></div>
+  <div class="grid">
+    <div class="section wezterm-section">
+      <div class="section-header">基本操作</div>
+      <div class="row"><span class="key"><kbd>Cmd+p</kbd></span><span class="desc">コマンドパレット</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+Shift+p</kbd></span><span class="desc">コマンドパレット</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+Shift+r</kbd></span><span class="desc">設定再読み込み</span></div>
+      <div class="row"><span class="key"><kbd>Alt+Enter</kbd></span><span class="desc">フルスクリーン切替</span></div>
+      <div class="row"><span class="key"><kbd>Shift+Enter</kbd></span><span class="desc">改行送信 (Claude Code等)</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">フォントサイズ</div>
+      <div class="row"><span class="key"><kbd>Ctrl++</kbd></span><span class="desc">拡大</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+-</kbd></span><span class="desc">縮小</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+0</kbd></span><span class="desc">リセット</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">タブ操作</div>
+      <div class="row"><span class="key"><kbd>Cmd+t</kbd></span><span class="desc">新規タブ</span></div>
+      <div class="row"><span class="key"><kbd>Cmd+w</kbd></span><span class="desc">タブを閉じる</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+Tab</kbd></span><span class="desc">次のタブ</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+Shift+Tab</kbd></span><span class="desc">前のタブ</span></div>
+      <div class="row"><span class="key"><kbd>Cmd+1</kbd> ~ <kbd>9</kbd></span><span class="desc">タブ番号で切替</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>{</kbd></span><span class="desc">タブを左へ移動</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>}</kbd></span><span class="desc">タブを右へ移動</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">Workspace操作</div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>w</kbd></span><span class="desc">Workspace 切替</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>W</kbd></span><span class="desc">新規 Workspace 作成</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>$</kbd></span><span class="desc">Workspace 名変更</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">Pane操作</div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>d</kbd></span><span class="desc">縦分割</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>r</kbd></span><span class="desc">横分割</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>x</kbd></span><span class="desc">Pane を閉じる</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span><span class="desc">Pane 移動</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>z</kbd></span><span class="desc">Pane ズーム (最大化/復帰)</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+Shift+[</kbd></span><span class="desc">Pane 選択 UI</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">Pane キーテーブル</div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>s</kbd> → <kbd>h/j/k/l</kbd></span><span class="desc">サイズ調整モード</span></div>
+      <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">サイズ調整を抜ける</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>a</kbd> → <kbd>h/j/k/l</kbd></span><span class="desc">Pane 選択モード (1秒)</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">コピー / ペースト</div>
+      <div class="row"><span class="key"><kbd>Cmd+c</kbd></span><span class="desc">コピー</span></div>
+      <div class="row"><span class="key"><kbd>Cmd+v</kbd></span><span class="desc">ペースト</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>[</kbd></span><span class="desc">コピーモード開始</span></div>
+    </div>
+    <div class="section wezterm-section">
+      <div class="section-header">コピーモード (vim風)</div>
+      <div class="row"><span class="key"><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span><span class="desc">移動</span></div>
+      <div class="row"><span class="key"><kbd>w</kbd> <kbd>b</kbd> <kbd>e</kbd></span><span class="desc">単語移動</span></div>
+      <div class="row"><span class="key"><kbd>0</kbd> / <kbd>^</kbd> / <kbd>$</kbd></span><span class="desc">行頭 / 内容先頭 / 行末</span></div>
+      <div class="row"><span class="key"><kbd>g</kbd> / <kbd>G</kbd></span><span class="desc">先頭 / 末尾</span></div>
+      <div class="row"><span class="key"><kbd>H</kbd> / <kbd>M</kbd> / <kbd>L</kbd></span><span class="desc">viewport 上 / 中 / 下</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+b</kbd> / <kbd>Ctrl+f</kbd></span><span class="desc">ページ上 / 下</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+u</kbd> / <kbd>Ctrl+d</kbd></span><span class="desc">半ページ上 / 下</span></div>
+      <div class="row"><span class="key"><kbd>f</kbd> <kbd>F</kbd> <kbd>t</kbd> <kbd>T</kbd> + 文字</span><span class="desc">文字ジャンプ</span></div>
+      <div class="row"><span class="key"><kbd>v</kbd> / <kbd>V</kbd> / <kbd>Ctrl+v</kbd></span><span class="desc">文字 / 行 / ブロック選択</span></div>
+      <div class="row"><span class="key"><kbd>y</kbd></span><span class="desc">コピー</span></div>
+      <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">コピーして終了</span></div>
+      <div class="row"><span class="key"><kbd>Esc</kbd> / <kbd>q</kbd> / <kbd>Ctrl+c</kbd></span><span class="desc">コピーモード終了</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Neovim (LazyVim) ===== -->
+<div class="tab-content" id="tab-neovim">
+  <div class="leader-info">Leader キー: <kbd>Space</kbd> <span style="color:var(--text-muted)">Local Leader: <kbd>\</kbd></span></div>
+  <div class="grid">
+    <div class="section neovim-section">
+      <div class="section-header">ファイル / 一般</div>
+      <div class="row"><span class="key"><kbd>Space</kbd></span><span class="desc">コマンド待受 (Which Key)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">Oil.nvim (親ディレクトリ)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>f</kbd></span><span class="desc">ファイル検索 (Telescope)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>r</kbd></span><span class="desc">最近のファイル</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>g</kbd></span><span class="desc">Live Grep</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>b</kbd></span><span class="desc">バッファ検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>p</kbd></span><span class="desc">プラグインファイル検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>n</kbd></span><span class="desc">新規ファイル</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>q</kbd> <kbd>q</kbd></span><span class="desc">全て閉じる</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">ウィンドウ / バッファ</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>w</kbd></span><span class="desc">ウィンドウメニュー</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+h/j/k/l</kbd></span><span class="desc">ウィンドウ移動</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+↑/↓/←/→</kbd></span><span class="desc">ウィンドウサイズ変更</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>b</kbd> <kbd>d</kbd></span><span class="desc">バッファ削除 (タブを閉じる close)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>b</kbd> <kbd>b</kbd></span><span class="desc">前のバッファに切替</span></div>
+      <div class="row"><span class="key"><kbd>H</kbd> / <kbd>L</kbd></span><span class="desc">前 / 次のバッファ</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>|</kbd></span><span class="desc">縦分割</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>-</kbd></span><span class="desc">横分割</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">LSP (コード操作)</div>
+      <div class="row"><span class="key"><kbd>gd</kbd></span><span class="desc">定義へジャンプ</span></div>
+      <div class="row"><span class="key"><kbd>gr</kbd></span><span class="desc">参照一覧</span></div>
+      <div class="row"><span class="key"><kbd>gI</kbd></span><span class="desc">実装へジャンプ</span></div>
+      <div class="row"><span class="key"><kbd>gy</kbd></span><span class="desc">型定義へジャンプ</span></div>
+      <div class="row"><span class="key"><kbd>K</kbd></span><span class="desc">ホバー (ドキュメント)</span></div>
+      <div class="row"><span class="key"><kbd>gK</kbd></span><span class="desc">シグネチャヘルプ</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>c</kbd> <kbd>a</kbd></span><span class="desc">コードアクション</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>c</kbd> <kbd>r</kbd></span><span class="desc">リネーム</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>c</kbd> <kbd>d</kbd></span><span class="desc">行の診断メッセージ</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>c</kbd> <kbd>f</kbd></span><span class="desc">フォーマット</span></div>
+      <div class="row"><span class="key"><kbd>]d</kbd> / <kbd>[d</kbd></span><span class="desc">次 / 前の診断</span></div>
+      <div class="row"><span class="key"><kbd>]e</kbd> / <kbd>[e</kbd></span><span class="desc">次 / 前のエラー</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">検索 / 置換</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>g</kbd></span><span class="desc">Grep (Telescope)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>w</kbd></span><span class="desc">カーソル下の単語を検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>r</kbd></span><span class="desc">置換 (Spectre)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>s</kbd></span><span class="desc">シンボル検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>R</kbd></span><span class="desc">Resume 検索</span></div>
+      <div class="row"><span class="key"><kbd>/</kbd></span><span class="desc">バッファ内検索</span></div>
+      <div class="row"><span class="key"><kbd>n</kbd> / <kbd>N</kbd></span><span class="desc">次 / 前のマッチ</span></div>
+      <div class="row"><span class="key"><kbd>*</kbd></span><span class="desc">カーソル下の単語を検索</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">ファイルツリー (Neo-tree)</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">ファイルツリー表示 / フォーカス</span></div>
+      <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">ファイルを開く / フォルダ展開</span></div>
+      <div class="row"><span class="key"><kbd>a</kbd></span><span class="desc">新規ファイル作成</span></div>
+      <div class="row"><span class="key"><kbd>d</kbd></span><span class="desc">ファイル / フォルダ削除</span></div>
+      <div class="row"><span class="key"><kbd>r</kbd></span><span class="desc">リネーム</span></div>
+      <div class="row"><span class="key"><kbd>c</kbd></span><span class="desc">コピー</span></div>
+      <div class="row"><span class="key"><kbd>m</kbd></span><span class="desc">移動</span></div>
+      <div class="row"><span class="key"><kbd>y</kbd></span><span class="desc">パスをコピー</span></div>
+      <div class="row"><span class="key"><kbd>H</kbd></span><span class="desc">隠しファイル表示切替</span></div>
+      <div class="row"><span class="key"><kbd>/</kbd></span><span class="desc">フィルター (ファイル名検索)</span></div>
+      <div class="row"><span class="key"><kbd>q</kbd></span><span class="desc">ツリーを閉じる</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">Git 操作</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>g</kbd></span><span class="desc">Lazygit (全操作可能)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>f</kbd></span><span class="desc">Git ファイル検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>c</kbd></span><span class="desc">Git コミット検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>b</kbd></span><span class="desc">Git blame (行)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>d</kbd></span><span class="desc">現在ファイルの diff 表示</span></div>
+      <div class="row"><span class="key"><kbd>]h</kbd> / <kbd>[h</kbd></span><span class="desc">次 / 前の変更箇所 (hunk)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>p</kbd></span><span class="desc">Hunk プレビュー (差分を表示)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>s</kbd></span><span class="desc">Hunk ステージ</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>r</kbd></span><span class="desc">Hunk リセット (変更を戻す)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>S</kbd></span><span class="desc">バッファ全体をステージ</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>R</kbd></span><span class="desc">バッファ全体をリセット</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">Lazygit 内の操作</div>
+      <div class="row"><span class="key"><kbd>j</kbd> / <kbd>k</kbd></span><span class="desc">ファイル選択 (右に差分表示)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd></span><span class="desc">ステージ / アンステージ</span></div>
+      <div class="row"><span class="key"><kbd>c</kbd></span><span class="desc">コミット</span></div>
+      <div class="row"><span class="key"><kbd>p</kbd></span><span class="desc">プッシュ</span></div>
+      <div class="row"><span class="key"><kbd>P</kbd></span><span class="desc">プル</span></div>
+      <div class="row"><span class="key"><kbd>1</kbd>~<kbd>5</kbd></span><span class="desc">パネル切替 (Status/Files/Branches/Commits/Stash)</span></div>
+      <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">ファイルの差分詳細</span></div>
+      <div class="row"><span class="key"><kbd>?</kbd></span><span class="desc">ヘルプ表示</span></div>
+      <div class="row"><span class="key"><kbd>q</kbd></span><span class="desc">Lazygit を閉じる</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">移動 / ジャンプ</div>
+      <div class="row"><span class="key"><kbd>Ctrl+o</kbd> / <kbd>Ctrl+i</kbd></span><span class="desc">ジャンプリスト 前 / 次</span></div>
+      <div class="row"><span class="key"><kbd>%</kbd></span><span class="desc">対応する括弧へ</span></div>
+      <div class="row"><span class="key"><kbd>[[</kbd> / <kbd>]]</kbd></span><span class="desc">前 / 次の関数・クラス</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>j</kbd></span><span class="desc">ジャンプリスト</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>m</kbd></span><span class="desc">マーク一覧</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">編集 (便利)</div>
+      <div class="row"><span class="key"><kbd>gcc</kbd></span><span class="desc">行コメント切替</span></div>
+      <div class="row"><span class="key"><kbd>gc</kbd> (Visual)</span><span class="desc">選択範囲コメント切替</span></div>
+      <div class="row"><span class="key"><kbd>sa</kbd> / <kbd>sd</kbd> / <kbd>sr</kbd></span><span class="desc">Surround 追加 / 削除 / 置換</span></div>
+      <div class="row"><span class="key"><kbd>J</kbd></span><span class="desc">行結合</span></div>
+      <div class="row"><span class="key"><kbd>&lt;</kbd> / <kbd>&gt;</kbd> (Visual)</span><span class="desc">インデント 左 / 右</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>x</kbd> <kbd>l</kbd></span><span class="desc">Location List</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>x</kbd> <kbd>q</kbd></span><span class="desc">Quickfix List</span></div>
+    </div>
+    <div class="section neovim-section">
+      <div class="section-header">UI 切替</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>t</kbd></span><span class="desc">Treesitter 表示</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>l</kbd></span><span class="desc">行番号切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>s</kbd></span><span class="desc">スペル切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>w</kbd></span><span class="desc">折り返し切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>C</kbd></span><span class="desc">カラースキーム切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>f</kbd></span><span class="desc">フォーマット切替</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Vim 基本操作 ===== -->
+<div class="tab-content" id="tab-vim">
+  <div class="grid">
+    <div class="section vim-section">
+      <div class="section-header">モード切替</div>
+      <div class="row"><span class="key"><kbd>i</kbd> / <kbd>a</kbd></span><span class="desc">挿入 (カーソル前 / 後)</span></div>
+      <div class="row"><span class="key"><kbd>I</kbd> / <kbd>A</kbd></span><span class="desc">挿入 (行頭 / 行末)</span></div>
+      <div class="row"><span class="key"><kbd>o</kbd> / <kbd>O</kbd></span><span class="desc">新行を下 / 上に挿入</span></div>
+      <div class="row"><span class="key"><kbd>v</kbd> / <kbd>V</kbd> / <kbd>Ctrl+v</kbd></span><span class="desc">ビジュアル 文字 / 行 / 矩形</span></div>
+      <div class="row"><span class="key"><kbd>Esc</kbd></span><span class="desc">ノーマルモードに戻る</span></div>
+      <div class="row"><span class="key"><kbd>:</kbd></span><span class="desc">コマンドラインモード</span></div>
+      <div class="row"><span class="key"><kbd>R</kbd></span><span class="desc">置換モード</span></div>
+    </div>
+    <div class="section vim-section">
+      <div class="section-header">カーソル移動</div>
+      <div class="row"><span class="key"><kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span><span class="desc">左 / 下 / 上 / 右</span></div>
+      <div class="row"><span class="key"><kbd>w</kbd> / <kbd>b</kbd> / <kbd>e</kbd></span><span class="desc">次の単語 / 前の単語 / 単語末</span></div>
+      <div class="row"><span class="key"><kbd>W</kbd> / <kbd>B</kbd> / <kbd>E</kbd></span><span class="desc">WORD単位で移動</span></div>
+      <div class="row"><span class="key"><kbd>0</kbd> / <kbd>^</kbd> / <kbd>$</kbd></span><span class="desc">行頭 / 非空白先頭 / 行末</span></div>
+      <div class="row"><span class="key"><kbd>gg</kbd> / <kbd>G</kbd></span><span class="desc">ファイル先頭 / 末尾</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+u</kbd> / <kbd>Ctrl+d</kbd></span><span class="desc">半ページ上 / 下</span></div>
+      <div class="row"><span class="key"><kbd>Ctrl+f</kbd> / <kbd>Ctrl+b</kbd></span><span class="desc">ページ下 / 上</span></div>
+      <div class="row"><span class="key"><kbd>H</kbd> / <kbd>M</kbd> / <kbd>L</kbd></span><span class="desc">画面 上 / 中 / 下</span></div>
+      <div class="row"><span class="key"><kbd>f</kbd> / <kbd>F</kbd> + 文字</span><span class="desc">行内ジャンプ 前 / 後</span></div>
+      <div class="row"><span class="key"><kbd>{</kbd> / <kbd>}</kbd></span><span class="desc">段落 前 / 次</span></div>
+    </div>
+    <div class="section vim-section">
+      <div class="section-header">編集</div>
+      <div class="row"><span class="key"><kbd>x</kbd> / <kbd>X</kbd></span><span class="desc">1文字削除 (後 / 前)</span></div>
+      <div class="row"><span class="key"><kbd>dd</kbd> / <kbd>D</kbd></span><span class="desc">行削除 / カーソル以降削除</span></div>
+      <div class="row"><span class="key"><kbd>yy</kbd> / <kbd>Y</kbd></span><span class="desc">行コピー</span></div>
+      <div class="row"><span class="key"><kbd>p</kbd> / <kbd>P</kbd></span><span class="desc">ペースト (後 / 前)</span></div>
+      <div class="row"><span class="key"><kbd>cc</kbd> / <kbd>C</kbd></span><span class="desc">行変更 / カーソル以降変更</span></div>
+      <div class="row"><span class="key"><kbd>ciw</kbd> / <kbd>caw</kbd></span><span class="desc">単語内 / 周辺を変更</span></div>
+      <div class="row"><span class="key"><kbd>ci"</kbd> / <kbd>ci(</kbd></span><span class="desc">引用符 / 括弧内を変更</span></div>
+      <div class="row"><span class="key"><kbd>di"</kbd> / <kbd>da(</kbd></span><span class="desc">引用符内削除 / 括弧周辺削除</span></div>
+      <div class="row"><span class="key"><kbd>u</kbd> / <kbd>Ctrl+r</kbd></span><span class="desc">undo アンドゥ / redo リドゥ</span></div>
+      <div class="row"><span class="key"><kbd>.</kbd></span><span class="desc">最後の操作を繰り返し</span></div>
+      <div class="row"><span class="key"><kbd>>></kbd> / <kbd><<</kbd></span><span class="desc">インデント 右 / 左</span></div>
+      <div class="row"><span class="key"><kbd>J</kbd></span><span class="desc">行結合</span></div>
+    </div>
+    <div class="section vim-section">
+      <div class="section-header">検索 / 置換 / ファイル</div>
+      <div class="row"><span class="key"><kbd>/pattern</kbd></span><span class="desc">前方検索</span></div>
+      <div class="row"><span class="key"><kbd>?pattern</kbd></span><span class="desc">後方検索</span></div>
+      <div class="row"><span class="key"><kbd>n</kbd> / <kbd>N</kbd></span><span class="desc">次 / 前のマッチ</span></div>
+      <div class="row"><span class="key"><kbd>*</kbd></span><span class="desc">カーソル下の単語を前方検索</span></div>
+      <div class="row"><span class="key"><kbd>:s/old/new/g</kbd></span><span class="desc">行内置換</span></div>
+      <div class="row"><span class="key"><kbd>:%s/old/new/g</kbd></span><span class="desc">ファイル全体置換</span></div>
+      <div class="row"><span class="key"><kbd>:w</kbd> / <kbd>:q</kbd> / <kbd>:wq</kbd></span><span class="desc">保存 / 閉じる / 保存して閉じる</span></div>
+      <div class="row"><span class="key"><kbd>:e file</kbd></span><span class="desc">ファイルを開く</span></div>
+      <div class="row"><span class="key"><kbd>:sp</kbd> / <kbd>:vsp</kbd></span><span class="desc">横分割 / 縦分割</span></div>
+    </div>
+    <div class="section vim-section">
+      <div class="section-header">テキストオブジェクト</div>
+      <div class="row"><span class="key"><kbd>iw</kbd> / <kbd>aw</kbd></span><span class="desc">inner word / a word</span></div>
+      <div class="row"><span class="key"><kbd>is</kbd> / <kbd>as</kbd></span><span class="desc">inner sentence / a sentence</span></div>
+      <div class="row"><span class="key"><kbd>ip</kbd> / <kbd>ap</kbd></span><span class="desc">inner paragraph / a paragraph</span></div>
+      <div class="row"><span class="key"><kbd>i"</kbd> / <kbd>a"</kbd></span><span class="desc">引用符の中 / 周り</span></div>
+      <div class="row"><span class="key"><kbd>i(</kbd> / <kbd>a(</kbd></span><span class="desc">括弧の中 / 周り</span></div>
+      <div class="row"><span class="key"><kbd>i{</kbd> / <kbd>a{</kbd></span><span class="desc">波括弧の中 / 周り</span></div>
+      <div class="row"><span class="key"><kbd>it</kbd> / <kbd>at</kbd></span><span class="desc">タグの中 / 周り</span></div>
+    </div>
+    <div class="section vim-section">
+      <div class="section-header">レジスタ / マクロ</div>
+      <div class="row"><span class="key"><kbd>"a</kbd><kbd>y</kbd></span><span class="desc">レジスタ a にヤンク</span></div>
+      <div class="row"><span class="key"><kbd>"a</kbd><kbd>p</kbd></span><span class="desc">レジスタ a からペースト</span></div>
+      <div class="row"><span class="key"><kbd>:reg</kbd></span><span class="desc">レジスタ一覧</span></div>
+      <div class="row"><span class="key"><kbd>qa</kbd></span><span class="desc">マクロ a の記録開始</span></div>
+      <div class="row"><span class="key"><kbd>q</kbd></span><span class="desc">マクロ記録終了</span></div>
+      <div class="row"><span class="key"><kbd>@a</kbd></span><span class="desc">マクロ a を実行</span></div>
+      <div class="row"><span class="key"><kbd>@@</kbd></span><span class="desc">最後のマクロを再実行</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Tab switching
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+
+tabBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    tabBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    if (tab === 'all') {
+      tabContents.forEach(c => c.classList.add('active'));
+    } else {
+      tabContents.forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + tab).classList.add('active');
+    }
+    // Re-run search filter
+    filterRows();
+  });
+});
+
+// Search / filter
+const searchInput = document.getElementById('search');
+const countEl = document.getElementById('count');
+
+function filterRows() {
+  const query = searchInput.value.trim().toLowerCase();
+  const allRows = document.querySelectorAll('.tab-content.active .row');
+  let visible = 0;
+  const total = allRows.length;
+
+  allRows.forEach(row => {
+    // Reset highlights
+    row.querySelectorAll('mark').forEach(m => {
+      m.replaceWith(m.textContent);
+    });
+
+    if (!query) {
+      row.classList.remove('hidden', 'highlight');
+      visible++;
+      return;
+    }
+
+    const keyText = row.querySelector('.key')?.textContent.toLowerCase() || '';
+    const descText = row.querySelector('.desc')?.textContent.toLowerCase() || '';
+    const match = keyText.includes(query) || descText.includes(query);
+
+    row.classList.toggle('hidden', !match);
+    row.classList.toggle('highlight', match);
+    if (match) {
+      visible++;
+      // Highlight matching text
+      highlightText(row.querySelector('.key'), query);
+      highlightText(row.querySelector('.desc'), query);
+    }
+  });
+
+  if (query) {
+    countEl.textContent = `${visible} / ${total} 件`;
+  } else {
+    countEl.textContent = '';
+  }
+}
+
+function highlightText(el, query) {
+  if (!el) return;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  nodes.forEach(node => {
+    const text = node.textContent;
+    const lower = text.toLowerCase();
+    const idx = lower.indexOf(query);
+    if (idx === -1) return;
+
+    const before = text.slice(0, idx);
+    const match = text.slice(idx, idx + query.length);
+    const after = text.slice(idx + query.length);
+
+    const frag = document.createDocumentFragment();
+    if (before) frag.appendChild(document.createTextNode(before));
+    const mark = document.createElement('mark');
+    mark.textContent = match;
+    frag.appendChild(mark);
+    if (after) frag.appendChild(document.createTextNode(after));
+    node.parentNode.replaceChild(frag, node);
+  });
+}
+
+searchInput.addEventListener('input', filterRows);
+
+// Keyboard shortcut: / to focus search
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && document.activeElement !== searchInput) {
+    e.preventDefault();
+    searchInput.focus();
+  }
+  if (e.key === 'Escape' && document.activeElement === searchInput) {
+    searchInput.value = '';
+    filterRows();
+    searchInput.blur();
+  }
+});
+</script>
+</body>
+</html>
