@@ -7,4 +7,6 @@ vim.opt.relativenumber = true
 vim.opt.tabstop = 2
 vim.opt.shiftwidth = 2
 vim.opt.expandtab = true
-vim.opt.wrap = false
+vim.opt.wrap = true
+vim.opt.linebreak = true -- 単語の途中で折り返さない
+vim.opt.breakindent = true -- 折り返した行をインデントに揃える
