@@ -8,8 +8,13 @@
 #   - google-dev-knowledge : depends on ~/.claude/hooks/dev-knowledge-headers.sh
 #   - terraform : requires Docker Desktop running
 #
-# Plugin-provided MCP (Slack / palmu-api-doc / Google Drive) are NOT handled
-# here — install them via `/plugin` after `claude` first launch.
+# Slack MCP is provided by the official `slack@claude-plugins-official` plugin
+# (remote HTTP MCP at https://mcp.slack.com/mcp, browser OAuth on first connect).
+# This script installs it. The OAuth step itself is interactive and cannot be
+# scripted — Claude Code opens the browser on first connect.
+#
+# light-skills plugins (palmu-api-doc, slack-tools, etc.) are managed from the
+# light-skills repo, not here.
 
 set -euo pipefail
 
@@ -47,6 +52,25 @@ add_http() {
   info "$name"
 }
 
+# Installed plugins (user scope) — used to skip re-install.
+EXISTING_PLUGINS="$(claude plugin list 2>/dev/null | grep -oE '[a-z0-9-]+@[a-z0-9-]+' || true)"
+
+# Ensure a marketplace is registered (from its source repo), then install a
+# plugin from it. $source is the GitHub repo passed to `marketplace add`;
+# $marketplace is the registered name used in `plugin install` and `list`.
+add_plugin() {
+  local plugin="$1" marketplace="$2" source="$3"
+  if echo "$EXISTING_PLUGINS" | grep -qx "${plugin}@${marketplace}"; then
+    skip "${plugin}@${marketplace} (already installed)"
+    return
+  fi
+  if ! claude plugin marketplace list 2>/dev/null | grep -q "$marketplace"; then
+    claude plugin marketplace add "$source"
+  fi
+  claude plugin install --scope user "${plugin}@${marketplace}"
+  info "${plugin}@${marketplace}"
+}
+
 # --- stdio servers ---
 add_stdio serena uvx --from \
   "git+https://github.com/oraios/serena@368486299d5fa9a65a984daf24d0209ca1b49feb" \
@@ -60,11 +84,18 @@ add_stdio terraform docker run -i --rm hashicorp/terraform-mcp-server
 add_http notion               https://mcp.notion.com/mcp
 add_http google-dev-knowledge https://developerknowledge.googleapis.com/mcp
 
+# --- plugin-provided MCP ---
+# Slack MCP (official plugin). OAuth happens on first connect inside Claude Code.
+add_plugin slack claude-plugins-official anthropics/claude-plugins-official
+
 cat <<'EOF'
 
 MCP servers registered. Manual follow-up:
   1. notion: open Claude Code, the first connect triggers browser OAuth
   2. google-dev-knowledge: ensure ~/.claude/hooks/dev-knowledge-headers.sh exists & is executable
   3. terraform: start Docker Desktop before use
-  4. plugin MCP (Slack / palmu-api-doc / Google Drive): install via /plugin
+  4. slack: open Claude Code; the first connect opens browser OAuth for the
+     light-inc-com workspace (admin approval already granted). Restart Claude
+     Code after install so the plugin loads.
+  5. light-skills plugins (palmu-api-doc etc.): installed from the light-skills repo.
 EOF
