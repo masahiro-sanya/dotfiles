@@ -265,8 +265,8 @@
     </div>
     <div class="section wezterm-section">
       <div class="section-header">Pane操作</div>
-      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>d</kbd></span><span class="desc">縦分割</span></div>
-      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>r</kbd></span><span class="desc">横分割</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>d</kbd></span><span class="desc">上下に分割 (新ペインが下 / SplitVertical)</span></div>
+      <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>r</kbd></span><span class="desc">左右に分割 (新ペインが右 / SplitHorizontal)</span></div>
       <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>x</kbd></span><span class="desc">Pane を閉じる</span></div>
       <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span><span class="desc">Pane 移動</span></div>
       <div class="row"><span class="key"><kbd>Leader</kbd> <kbd>z</kbd></span><span class="desc">Pane ズーム (最大化/復帰)</span></div>
@@ -309,12 +309,16 @@
     <div class="section neovim-section">
       <div class="section-header">ファイル / 一般</div>
       <div class="row"><span class="key"><kbd>Space</kbd></span><span class="desc">コマンド待受 (Which Key)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">Oil.nvim (親ディレクトリ)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>f</kbd></span><span class="desc">ファイル検索 (Telescope)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>r</kbd></span><span class="desc">最近のファイル</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>g</kbd></span><span class="desc">Live Grep</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">ファイルツリー (Snacks Explorer)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>o</kbd></span><span class="desc">Oil.nvim (親ディレクトリをバッファ編集)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>&lt;Space&gt;</kbd></span><span class="desc">ファイル名検索 (Root / Snacks Picker)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>f</kbd></span><span class="desc">ファイル名検索 (Snacks Picker)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>F</kbd></span><span class="desc">ファイル名検索 (cwd 基準)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>r</kbd></span><span class="desc">最近のファイル (Recent)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>g</kbd></span><span class="desc">ファイル名検索 (git 管理ファイルのみ) ※中身grepではない</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>b</kbd></span><span class="desc">バッファ検索</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>p</kbd></span><span class="desc">プラグインファイル検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>c</kbd></span><span class="desc">設定ファイル検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>p</kbd></span><span class="desc">プロジェクト切替 (Projects)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>f</kbd> <kbd>n</kbd></span><span class="desc">新規ファイル</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>q</kbd> <kbd>q</kbd></span><span class="desc">全て閉じる</span></div>
     </div>
@@ -346,36 +350,40 @@
     </div>
     <div class="section neovim-section">
       <div class="section-header">検索 / 置換</div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>g</kbd></span><span class="desc">Grep (Telescope)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>w</kbd></span><span class="desc">カーソル下の単語を検索</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>r</kbd></span><span class="desc">置換 (Spectre)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>s</kbd></span><span class="desc">シンボル検索</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>R</kbd></span><span class="desc">Resume 検索</span></div>
-      <div class="row"><span class="key"><kbd>/</kbd></span><span class="desc">バッファ内検索</span></div>
+      <div class="row"><span class="key"><kbd>/</kbd></span><span class="desc">バッファ内検索 (今開いてるファイルの中身)</span></div>
       <div class="row"><span class="key"><kbd>n</kbd> / <kbd>N</kbd></span><span class="desc">次 / 前のマッチ</span></div>
-      <div class="row"><span class="key"><kbd>*</kbd></span><span class="desc">カーソル下の単語を検索</span></div>
+      <div class="row"><span class="key"><kbd>*</kbd></span><span class="desc">カーソル下の単語をバッファ内検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>/</kbd></span><span class="desc">★Grep (プロジェクト全体の中身を検索)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>g</kbd></span><span class="desc">Grep (プロジェクト全体の中身を検索 / Snacks)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>w</kbd></span><span class="desc">カーソル下の単語をプロジェクト全体grep</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>b</kbd></span><span class="desc">バッファ内の行を絞り込み (fuzzy)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>r</kbd></span><span class="desc">複数ファイル一括置換 (grug-far)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>s</kbd></span><span class="desc">シンボル検索 (LSP)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>s</kbd> <kbd>R</kbd></span><span class="desc">直前の検索を再開 (Resume)</span></div>
     </div>
     <div class="section neovim-section">
-      <div class="section-header">ファイルツリー (Neo-tree)</div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">ファイルツリー表示 / フォーカス</span></div>
-      <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">ファイルを開く / フォルダ展開</span></div>
-      <div class="row"><span class="key"><kbd>a</kbd></span><span class="desc">新規ファイル作成</span></div>
-      <div class="row"><span class="key"><kbd>d</kbd></span><span class="desc">ファイル / フォルダ削除</span></div>
+      <div class="section-header">ファイルツリー (Snacks Explorer)</div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>e</kbd></span><span class="desc">ツリー表示 / フォーカス</span></div>
+      <div class="row"><span class="key"><kbd>l</kbd> / <kbd>Enter</kbd></span><span class="desc">ファイルを開く / フォルダ展開</span></div>
+      <div class="row"><span class="key"><kbd>h</kbd></span><span class="desc">フォルダを閉じる (折りたたみ)</span></div>
+      <div class="row"><span class="key"><kbd>&lt;BS&gt;</kbd></span><span class="desc">親ディレクトリへ</span></div>
+      <div class="row"><span class="key"><kbd>a</kbd></span><span class="desc">新規ファイル / フォルダ作成</span></div>
+      <div class="row"><span class="key"><kbd>d</kbd></span><span class="desc">削除</span></div>
       <div class="row"><span class="key"><kbd>r</kbd></span><span class="desc">リネーム</span></div>
-      <div class="row"><span class="key"><kbd>c</kbd></span><span class="desc">コピー</span></div>
-      <div class="row"><span class="key"><kbd>m</kbd></span><span class="desc">移動</span></div>
-      <div class="row"><span class="key"><kbd>y</kbd></span><span class="desc">パスをコピー</span></div>
-      <div class="row"><span class="key"><kbd>H</kbd></span><span class="desc">隠しファイル表示切替</span></div>
-      <div class="row"><span class="key"><kbd>/</kbd></span><span class="desc">フィルター (ファイル名検索)</span></div>
-      <div class="row"><span class="key"><kbd>q</kbd></span><span class="desc">ツリーを閉じる</span></div>
+      <div class="row"><span class="key"><kbd>c</kbd> / <kbd>m</kbd></span><span class="desc">コピー / 移動</span></div>
+      <div class="row"><span class="key"><kbd>y</kbd> / <kbd>p</kbd></span><span class="desc">パスをyank / 貼り付け</span></div>
+      <div class="row"><span class="key"><kbd>H</kbd> / <kbd>I</kbd></span><span class="desc">隠しファイル / 無視ファイル 表示切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>/</kbd></span><span class="desc">ツリー内を grep</span></div>
+      <div class="row"><span class="key"><kbd>q</kbd> / <kbd>Esc</kbd></span><span class="desc">ツリーを閉じる</span></div>
     </div>
     <div class="section neovim-section">
       <div class="section-header">Git 操作</div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>g</kbd></span><span class="desc">Lazygit (全操作可能)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>f</kbd></span><span class="desc">Git ファイル検索</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>c</kbd></span><span class="desc">Git コミット検索</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>f</kbd></span><span class="desc">現在ファイルのコミット履歴</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>l</kbd></span><span class="desc">Git ログ (コミット一覧)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>b</kbd></span><span class="desc">Git blame (行)</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>d</kbd></span><span class="desc">現在ファイルの diff 表示</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>d</kbd></span><span class="desc">Git diff (hunk 一覧)</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>s</kbd></span><span class="desc">Git status (変更ファイル一覧)</span></div>
       <div class="row"><span class="key"><kbd>]h</kbd> / <kbd>[h</kbd></span><span class="desc">次 / 前の変更箇所 (hunk)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>p</kbd></span><span class="desc">Hunk プレビュー (差分を表示)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>g</kbd> <kbd>h</kbd> <kbd>s</kbd></span><span class="desc">Hunk ステージ</span></div>
@@ -407,7 +415,7 @@
       <div class="section-header">編集 (便利)</div>
       <div class="row"><span class="key"><kbd>gcc</kbd></span><span class="desc">行コメント切替</span></div>
       <div class="row"><span class="key"><kbd>gc</kbd> (Visual)</span><span class="desc">選択範囲コメント切替</span></div>
-      <div class="row"><span class="key"><kbd>sa</kbd> / <kbd>sd</kbd> / <kbd>sr</kbd></span><span class="desc">Surround 追加 / 削除 / 置換</span></div>
+      <div class="row"><span class="key"><kbd>gco</kbd> / <kbd>gcO</kbd></span><span class="desc">下 / 上にコメント行を追加</span></div>
       <div class="row"><span class="key"><kbd>J</kbd></span><span class="desc">行結合</span></div>
       <div class="row"><span class="key"><kbd>&lt;</kbd> / <kbd>&gt;</kbd> (Visual)</span><span class="desc">インデント 左 / 右</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>x</kbd> <kbd>l</kbd></span><span class="desc">Location List</span></div>
@@ -415,11 +423,12 @@
     </div>
     <div class="section neovim-section">
       <div class="section-header">UI 切替</div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>t</kbd></span><span class="desc">Treesitter 表示</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>T</kbd></span><span class="desc">Treesitter 切替 (大文字 T)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>l</kbd></span><span class="desc">行番号切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>L</kbd></span><span class="desc">相対行番号切替</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>s</kbd></span><span class="desc">スペル切替</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>w</kbd></span><span class="desc">折り返し切替</span></div>
-      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>C</kbd></span><span class="desc">カラースキーム切替</span></div>
+      <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>C</kbd></span><span class="desc">カラースキーム切替 (大文字 C)</span></div>
       <div class="row"><span class="key"><kbd>Space</kbd> <kbd>u</kbd> <kbd>f</kbd></span><span class="desc">フォーマット切替</span></div>
     </div>
   </div>
