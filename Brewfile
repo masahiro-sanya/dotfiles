@@ -25,7 +25,9 @@ brew "mysql"
 brew "neovim"
 brew "openjdk"
 brew "pipx"
-brew "pnpm"
+# pnpm は Homebrew で入れない。corepack 経由で各プロジェクトの packageManager pin に解決する
+# （Homebrew 版は最新追従で Node の最低要求が上がり、nodenv の Node バージョンと衝突するため）
+# bootstrap.sh で corepack enable + nodenv rehash 済み
 brew "pre-commit"
 brew "ripgrep"
 brew "terminal-notifier"

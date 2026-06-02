@@ -65,3 +65,6 @@ fi
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
 export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
 export PATH="$HOME/.local/bin:$PATH"
+
+# Vite+ bin (https://viteplus.dev)
+. "$HOME/.vite-plus/env"

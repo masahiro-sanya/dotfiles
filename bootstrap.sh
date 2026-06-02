@@ -67,10 +67,21 @@ nodenv install -s "$NODE_VERSION"   && nodenv global "$NODE_VERSION"
 pyenv  install -s "$PYTHON_VERSION" && pyenv  global "$PYTHON_VERSION"
 rbenv  install -s "$RUBY_VERSION"   && rbenv  global "$RUBY_VERSION"
 
+# 7b. corepack（pnpm を各プロジェクトの packageManager pin で解決。Homebrew pnpm は使わない）
+step "Enabling corepack (pnpm via packageManager pin)"
+corepack enable && nodenv rehash
+
 # 8. mise
 step "Installing mise tools"
 eval "$(mise activate bash)"
 mise install -y
+
+# 8b. Vite+ (vp) グローバル導入。~/.vite-plus/bin/vp。shell hook は shell/.zshenv,.zshrc に追加済み
+#     （インストーラは冪等：既に設定済みなら append しない）
+if [ ! -x "$HOME/.vite-plus/bin/vp" ]; then
+  step "Installing Vite+ (vp)"
+  VP_NODE_MANAGER=yes curl -fsSL https://vite.plus | bash || note "vp install skipped/failed (re-run manually: curl -fsSL https://vite.plus | bash)"
+fi
 
 # 9. Claude Code CLI (公式 installer。~/.local/bin/claude にインストール)
 if ! command -v claude &>/dev/null && [ ! -x "$HOME/.local/bin/claude" ]; then
