@@ -33,7 +33,7 @@ brew "ripgrep"
 brew "terminal-notifier"
 brew "hashicorp/tap/terraform"
 brew "terragrunt"
-brew "tflint"
+# tflint は Homebrew core から削除済み。mise (mise/config.toml) で管理する
 brew "tree"
 brew "trivy"
 brew "yq"
