@@ -31,6 +31,9 @@ claude/session-env/
 claude/tasks/
 claude/agents/
 
+# Karabiner-Elements (設定変更のたびに自動バックアップが生成される)
+karabiner/automatic_backups/
+
 # AWS / GCP
 aws/credentials
 aws/sso/

@@ -1,0 +1,54 @@
+{
+    "global": {
+        "ask_for_confirmation_before_quitting": true,
+        "check_for_updates_on_startup": true,
+        "show_in_menu_bar": true,
+        "show_profile_name_in_menu_bar": false
+    },
+    "profiles": [
+        {
+            "name": "Default",
+            "selected": true,
+            "virtual_hid_keyboard": { "keyboard_type_v2": "ansi" },
+            "complex_modifications": {
+                "rules": [
+                    {
+                        "description": "HHKB: 左コマンド単体押しで英数、右コマンド単体押しでかな",
+                        "manipulators": [
+                            {
+                                "type": "basic",
+                                "from": {
+                                    "key_code": "left_command",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "left_command", "lazy": true }],
+                                "to_if_alone": [{ "key_code": "japanese_eisuu" }],
+                                "conditions": [
+                                    {
+                                        "type": "device_if",
+                                        "identifiers": [{ "vendor_id": 1278, "product_id": 33 }]
+                                    }
+                                ]
+                            },
+                            {
+                                "type": "basic",
+                                "from": {
+                                    "key_code": "right_command",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "right_command", "lazy": true }],
+                                "to_if_alone": [{ "key_code": "japanese_kana" }],
+                                "conditions": [
+                                    {
+                                        "type": "device_if",
+                                        "identifiers": [{ "vendor_id": 1278, "product_id": 33 }]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}
