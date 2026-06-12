@@ -77,6 +77,11 @@ backup_and_link "$DOTFILES_DIR/terminal/wezterm/keybinds.lua" "$HOME/.config/wez
 echo "--- Neovim ---"
 backup_and_link "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
 
+# --- Karabiner-Elements ---
+# 設定保存時に rename されるためファイル単体ではなくディレクトリごと symlink する
+echo "--- Karabiner-Elements ---"
+backup_and_link "$DOTFILES_DIR/karabiner" "$HOME/.config/karabiner"
+
 # --- VS Code ---
 echo "--- VS Code ---"
 VSCODE_USER="$HOME/Library/Application Support/Code/User"
