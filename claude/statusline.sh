@@ -1,17 +1,32 @@
 #!/bin/bash
 input=$(cat)
 
-# Model
-MODEL=$(echo "$input" | jq -r '.model.display_name // "Claude"')
+# 必要フィールドを jq 1回でまとめて取り出す（プロセス起動 6回 → 1回）
+IFS=$'\t' read -r MODEL PCT COST DURATION_MS ADDED REMOVED CURRENT_DIR <<EOF
+$(printf '%s' "$input" | jq -r '[
+  (.model.display_name // "Claude"),
+  (.context_window.used_percentage // 0),
+  (.cost.total_cost_usd // 0),
+  (.cost.total_duration_ms // 0),
+  (.cost.total_lines_added // 0),
+  (.cost.total_lines_removed // 0),
+  (.workspace.current_dir // "")
+] | @tsv' 2>/dev/null)
+EOF
 
-# Context usage
-PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+MODEL=${MODEL:-Claude}
+PCT=${PCT%%.*}
+PCT=${PCT:-0}
+COST=${COST:-0}
+DURATION_MS=${DURATION_MS:-0}
+ADDED=${ADDED:-0}
+REMOVED=${REMOVED:-0}
 
 # Progress bar (20 chars wide)
 FILLED=$((PCT * 20 / 100))
 [ "$FILLED" -gt 20 ] && FILLED=20
 BAR=""
-for i in $(seq 1 20); do
+for i in {1..20}; do
   if [ "$i" -le "$FILLED" ]; then
     BAR="${BAR}█"
   else
@@ -29,24 +44,15 @@ else
 fi
 RESET="\033[0m"
 
-# Cost
-COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
 COST_FMT=$(printf '%.2f' "$COST")
 
 # Duration (minutes)
-DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
 MINS=$((DURATION_MS / 60000))
 SECS=$(( (DURATION_MS % 60000) / 1000 ))
 
-# Lines changed
-ADDED=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
-REMOVED=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
-
-# Git branch (cached to avoid slowness)
-BRANCH=""
-if git rev-parse --git-dir > /dev/null 2>&1; then
-  BRANCH=$(git branch --show-current 2>/dev/null)
-fi
+# Git branch（セッションの作業ディレクトリ基準。statusline プロセスの cwd に依存しない）
+[ -z "$CURRENT_DIR" ] && CURRENT_DIR="$PWD"
+BRANCH=$(git -C "$CURRENT_DIR" branch --show-current 2>/dev/null)
 
 # Build output
 OUT=""
