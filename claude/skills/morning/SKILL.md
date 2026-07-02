@@ -1,7 +1,7 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Skill
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Skill
 ---
 
 # 朝一ルーチン
@@ -9,6 +9,8 @@ allowed-tools: Bash(claude update), Bash(claude --version), Bash(gh search prs *
 毎朝最初に実行する個人ワークフロー。6 ステップ（手順 6 は月初のみ）なので **TaskCreate で進捗管理** すること。
 
 ## 手順
+
+> **launchd 事前実行チェック**: まず `cat ~/.claude/.morning-prep-last` を確認し、**今日の日付なら手順 1・2 は launchd（morning-prep）実行済みとして skip** する（サマリには「launchd 実行済み」と記す）。日付が古い・ファイルが無い場合は通常どおり実行する。
 
 ### 1. Claude Code 本体を更新
 

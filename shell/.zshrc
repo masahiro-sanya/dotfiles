@@ -62,6 +62,82 @@ if command -v eza >/dev/null 2>&1; then
   alias lt='eza --tree --level=2 --group-directories-first'
 fi
 
+# --- Claude Code: 個別リポ cwd 起動 ---
+# ~/src・~/src/palmu（親ディレクトリ）で claude を起動すると memory や
+# プロジェクト設定が親側に分散するため、個別リポでの起動を習慣化する。
+
+# cw 用: ~/src/*/ と ~/src/palmu/*/ の git リポ一覧（フルパス）
+_cw_repos() {
+  local base dir
+  local -a found
+  found=()
+  for base in "$HOME/src" "$HOME/src/palmu"; do
+    [[ -d "$base" ]] || continue
+    for dir in "$base"/*/; do
+      [[ -e "${dir}.git" ]] && found+=("${dir%/}")
+    done
+  done
+  print -l -- "${found[@]}"
+}
+
+# cw [リポ名]: リポジトリを選んで cd + claude 起動
+# 引数あり: 名前一致（完全一致 → 前方一致）で cd。引数なし: fzf（無ければ select）で選択
+cw() {
+  local repo
+  local -a repos matches
+  repos=(${(f)"$(_cw_repos)"})
+  if (( ${#repos[@]} == 0 )); then
+    echo "cw: git リポが見つかりません (~/src, ~/src/palmu)" >&2
+    return 1
+  fi
+  if [[ -n "$1" ]]; then
+    matches=(${(M)repos:#*/$1})                            # 完全一致
+    (( ${#matches[@]} == 0 )) && matches=(${(M)repos:#*/$1*})  # 前方一致
+    if (( ${#matches[@]} == 0 )); then
+      echo "cw: リポが見つかりません: $1" >&2
+      return 1
+    fi
+    repo="${matches[1]}"
+  elif command -v fzf >/dev/null 2>&1; then
+    repo="$(print -l -- "${repos[@]}" | fzf --prompt='repo> ')" || return 1
+  else
+    local PS3='repo> '
+    select repo in "${repos[@]}"; do
+      [[ -n "$repo" ]] && break
+    done
+    [[ -n "$repo" ]] || return 1
+  fi
+  cd "$repo" && command claude
+}
+
+# cw のリポ名補完
+_cw() {
+  local -a names
+  local repo
+  for repo in ${(f)"$(_cw_repos)"}; do
+    names+=("${repo:t}")
+  done
+  compadd -- "${names[@]}"
+}
+command -v compdef >/dev/null 2>&1 && compdef _cw cw
+
+# claude ラッパー: 親ディレクトリ（~/src / ~/src/palmu そのもの）での起動に警告
+claude() {
+  local ans
+  case "$PWD" in
+    "$HOME/src"|"$HOME/src/palmu")
+      echo "claude: $PWD は親ディレクトリです。memory/設定が分散するため個別リポでの起動を推奨します（cw <リポ名> が使えます）。" >&2
+      printf 'このまま起動しますか？ [y/N] ' >&2
+      read -r ans
+      case "$ans" in
+        y|Y|yes|YES) ;;
+        *) echo "claude: 中止しました" >&2; return 1 ;;
+      esac
+      ;;
+  esac
+  command claude "$@"
+}
+
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
 export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
 export PATH="$HOME/.local/bin:$PATH"
