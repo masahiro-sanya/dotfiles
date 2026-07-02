@@ -133,7 +133,7 @@
     "ai-slop-review@light-skills": true,
     "app-security-check@light-skills": true,
     "check-release-cross-repo@light-skills": true,
-    "superpowers@superpowers-marketplace": false,
+    "superpowers@superpowers-marketplace": true,
     "document-skills@anthropic-agent-skills": true,
     "example-skills@anthropic-agent-skills": false
   },
