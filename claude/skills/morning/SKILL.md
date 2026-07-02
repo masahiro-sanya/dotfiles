@@ -1,12 +1,12 @@
 ---
 name: morning
-description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
+description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
 allowed-tools: Bash(claude update), Bash(claude --version), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Skill
 ---
 
 # 朝一ルーチン
 
-毎朝最初に実行する個人ワークフロー。5 ステップなので **TaskCreate で進捗管理** すること。
+毎朝最初に実行する個人ワークフロー。6 ステップ（手順 6 は月初のみ）なので **TaskCreate で進捗管理** すること。
 
 ## 手順
 
@@ -80,9 +80,29 @@ gh search prs --author=@me --state=open --json url,title,reviewDecision,reposito
 
 Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 
+### 6. 月次 memory 還流（月初のみ）
+
+memory に溜まった知見を「読むだけの記録」から「毎回効く仕組み（CLAUDE.md / hook / スキル）」へ焼き込むステップ。**その月の最初の /morning 実行時だけ** 行う。
+
+**月次判定**: `~/.claude/.morning-memory-reflow-last` を Read し、中身が今月（`YYYY-MM`）と一致したらこのステップはスキップ（サマリに「今月実施済み」と表示）。ファイルが無い・先月以前なら実施し、完了後に今月の `YYYY-MM` を Write する。
+
+**実施内容**:
+
+1. 全プロジェクトの memory 索引を集める：
+
+   ```bash
+   fd MEMORY.md ~/.claude/projects --max-depth 3
+   ```
+
+2. 各 `MEMORY.md` を Read し（索引だけで足りなければ個別ファイルも）、次の観点で棚卸しする：
+   - **昇格候補**: 複数プロジェクトに繰り返し出てくる失敗知見・feedback → グローバル CLAUDE.md（`~/src/dotfiles/claude/CLAUDE.md`）への追記、または PreToolUse hook / スキルへの機械化を提案
+   - **負債候補**: 古くなった・実態と矛盾する memory → 更新 or 削除を提案
+3. 提案を「対象 memory / 内容 / 昇格先 / 理由」の一覧でユーザーに見せ、**承認されたものだけ** 適用する。dotfiles 側の変更（CLAUDE.md / hooks）は feature branch を切って PR にする
+4. 提案ゼロなら「還流対象なし」でよい。無理に何か作らない
+
 ## 最終サマリ
 
-5 ステップ完了後、以下を出す：
+全ステップ完了後、以下を出す：
 
 ```
 朝一ルーチン完了 ☀️
@@ -92,10 +112,12 @@ Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 3. セッション: <N> プロジェクトで進行中（要再開: <候補2-3個>）
 4. PR: レビュー待ち <N> 件 / 自分のPR <N> 件
 5. collect-feed: <N> 件 Notion 登録
+6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
 ```
 
 ## 注意事項
 
 - いずれかのステップでエラーが出ても **後続は止めない**（朝一は完走優先）
 - エラーがあったステップは最終サマリに `⚠️` を付けて明示
-- TaskCreate で 5 ステップを管理し、in_progress → completed を逐次更新
+- TaskCreate で全ステップを管理し、in_progress → completed を逐次更新
+- 手順 6 は提案と承認が本体。**承認なしで CLAUDE.md やスキルを書き換えない**
