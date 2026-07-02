@@ -87,14 +87,68 @@
     "padding": 1
   },
   "enabledPlugins": {
+    "slack@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "dev-ticket@light-skills": true,
+    "github-analyze-member@light-skills": true,
+    "fix-pr-reviews@light-skills": true,
+    "light-skills-updater@light-skills": true,
+    "member-report-manager@light-skills": true,
+    "gcp-monitoring@light-skills": true,
+    "claude-session-manager@light-skills": true,
+    "stack-pr-merge@light-skills": true,
+    "dojo@light-skills": true,
+    "slack-tools@light-skills": true,
+    "retrospective-tools@light-skills": true,
+    "quarterly-evaluation-generator@light-skills": true,
+    "gogcli@light-skills": true,
+    "offboarding-checker@light-skills": true,
+    "gcp-prod-guard@light-skills": true,
+    "check-release-pr@light-skills": true,
+    "gcp-log-tools@light-skills": true,
+    "palmu-api-doc@light-skills": true,
+    "run-playwright@light-skills": true,
+    "win-session-tools@light-skills": true,
+    "post-release-check@light-skills": true,
+    "generate-test-spec@light-skills": true,
+    "slack-1on1-feedback@light-skills": true,
+    "prepare-release-staging@light-skills": true,
+    "cmux-handoff@light-skills": true,
+    "new-desktop-app@light-skills": true,
+    "new-web-app@light-skills": true,
+    "lhs@light-skills": true,
+    "infra-check@light-skills": true,
     "palmu-ai-dashboard-collector@light-skills": true,
-    "slack@claude-plugins-official": true
+    "konishi@light-skills": true,
+    "create-slides@light-skills": true,
+    "create-html@light-skills": true,
+    "collect-feed@light-skills": true,
+    "fukai@light-skills": true,
+    "claude-code-toolkit@light-skills": true,
+    "ai-slop-review@light-skills": true,
+    "app-security-check@light-skills": true,
+    "check-release-cross-repo@light-skills": true,
+    "superpowers@superpowers-marketplace": true,
+    "document-skills@anthropic-agent-skills": true,
+    "example-skills@anthropic-agent-skills": true
   },
   "extraKnownMarketplaces": {
     "light-skills": {
       "source": {
         "source": "github",
         "repo": "light-inc/light-skills"
+      }
+    },
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
       }
     }
   },
