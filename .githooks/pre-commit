@@ -1,0 +1,66 @@
+#!/bin/bash
+# dotfiles pre-commit: staged ファイルのみを対象にした軽量チェック
+# - claude/settings.json: JSON 妥当性 + ランタイムフィールド（コミット禁止）の検出
+# - *.sh: bash -n（staged 内容で検証）
+# - claude/hooks/*.sh が staged のときだけ hooks 回帰テストを実行
+# 配線: setup.sh が `git config core.hooksPath .githooks` を設定する
+# macOS 標準 bash 3.2 互換で書く
+
+set -u
+
+fail=0
+
+err() {
+    printf 'pre-commit: %s\n' "$1" >&2
+    fail=1
+}
+
+staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [ -z "${staged}" ]; then
+    exit 0
+fi
+
+run_hook_tests=0
+
+while IFS= read -r f; do
+    case "${f}" in
+        claude/settings.json)
+            content="$(git show :claude/settings.json)"
+            if ! printf '%s\n' "${content}" | jq . >/dev/null 2>&1; then
+                err "claude/settings.json が JSON としてパースできません"
+            else
+                bad="$(printf '%s\n' "${content}" | jq -r 'keys[] | select(. == "model" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")')"
+                if [ -n "${bad}" ]; then
+                    err "claude/settings.json にランタイムフィールドが含まれています（コミット禁止）: $(printf '%s' "${bad}" | tr '\n' ' ')"
+                    err "  除去してから再コミットしてください（例: git restore --staged claude/settings.json して該当キーを削除）"
+                fi
+            fi
+            ;;
+    esac
+
+    case "${f}" in
+        *.sh)
+            if ! out="$(git show ":${f}" | bash -n 2>&1)"; then
+                err "bash -n 失敗: ${f}"
+                printf '%s\n' "${out}" >&2
+            fi
+            ;;
+    esac
+
+    case "${f}" in
+        claude/hooks/*.sh)
+            run_hook_tests=1
+            ;;
+    esac
+done <<EOF
+${staged}
+EOF
+
+if [ "${run_hook_tests}" -eq 1 ]; then
+    if ! out="$(bash claude/hooks/tests/run-tests.sh 2>&1)"; then
+        err "claude/hooks の回帰テストが失敗しました"
+        printf '%s\n' "${out}" >&2
+    fi
+fi
+
+exit "${fail}"

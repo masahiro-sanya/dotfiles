@@ -141,6 +141,15 @@ else
     error "launchctl bootstrap failed: ${MORNING_PREP_PLIST}"
 fi
 
+# --- Git hooks (dotfiles リポ自身の pre-commit) ---
+echo "--- Git hooks ---"
+if git -C "$DOTFILES_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$DOTFILES_DIR" config core.hooksPath .githooks
+    info "git core.hooksPath -> .githooks"
+else
+    warn "dotfiles is not a git repo, skipping hooksPath"
+fi
+
 echo ""
 echo "=== Setup complete ==="
 echo ""
