@@ -128,6 +128,19 @@ done
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
 
+# --- launchd (morning-prep) ---
+echo "--- launchd ---"
+MORNING_PREP_LABEL="com.masahrosanya.morning-prep"
+MORNING_PREP_PLIST="$HOME/Library/LaunchAgents/${MORNING_PREP_LABEL}.plist"
+backup_and_link "$DOTFILES_DIR/launchd/${MORNING_PREP_LABEL}.plist" "$MORNING_PREP_PLIST"
+if launchctl print "gui/$(id -u)/${MORNING_PREP_LABEL}" >/dev/null 2>&1; then
+    warn "launchd already loaded: ${MORNING_PREP_LABEL}"
+elif launchctl bootstrap "gui/$(id -u)" "$MORNING_PREP_PLIST" 2>/dev/null; then
+    info "launchd loaded: ${MORNING_PREP_LABEL}"
+else
+    error "launchctl bootstrap failed: ${MORNING_PREP_PLIST}"
+fi
+
 echo ""
 echo "=== Setup complete ==="
 echo ""
