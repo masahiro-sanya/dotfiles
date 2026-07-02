@@ -60,12 +60,13 @@ echo "--- Git ---"
 backup_and_link "$DOTFILES_DIR/git/.gitconfig"        "$HOME/.gitconfig"
 backup_and_link "$DOTFILES_DIR/git/.gitignore_global"  "$HOME/.gitignore_global"
 
-# Set git user.email if not already configured
-if [ -z "$(git config --global user.email)" ]; then
+# Set git user.email if not already configured (per-machine: ~/.gitconfig.local)
+# NOTE: --global で書くと symlink 先の repo ファイルを汚すので必ず --file で書く
+if [ -z "$(git config --includes --global user.email)" ]; then
     printf "Git user.email is not set. Enter your email: "
     read -r GIT_EMAIL
-    git config --global user.email "$GIT_EMAIL"
-    info "Set git user.email to $GIT_EMAIL"
+    git config --file "$HOME/.gitconfig.local" user.email "$GIT_EMAIL"
+    info "Set git user.email to $GIT_EMAIL (in ~/.gitconfig.local)"
 fi
 
 # --- WezTerm ---

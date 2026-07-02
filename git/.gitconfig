@@ -1,6 +1,8 @@
 [user]
 	name = masahiro-sanya
-	# email is set per-machine via setup.sh
+	# email はマシン別に ~/.gitconfig.local へ（setup.sh が設定。repo は public のためコミットしない）
+[include]
+	path = ~/.gitconfig.local
 [init]
 	defaultBranch = main
 [core]

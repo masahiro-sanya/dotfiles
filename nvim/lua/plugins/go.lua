@@ -15,6 +15,11 @@ return {
       gopls = {
         settings = {
           gopls = {
+            -- テスト用ファイル (//go:build test) を gopls に認識させる。
+            -- これが無いと shared/testutils/... 等で
+            -- "build constraints exclude all Go files" 警告が出る。
+            -- CI の .golangci.yml も build-tags: [test] を指定済み。
+            buildFlags = { "-tags=test" },
             analyses = {
               ST1000 = false, -- package comment
               ST1001 = false, -- dot imports

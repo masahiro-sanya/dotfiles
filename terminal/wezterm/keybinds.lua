@@ -84,6 +84,11 @@ return {
     { key = "j", mods = "LEADER", action = act.ActivatePaneDirection("Down") },
     -- Pane選択
     { key = "[", mods = "CTRL|SHIFT", action = act.PaneSelect },
+    -- Pane入れ替え（選んだPaneをアクティブPaneと入れ替え） leader + o
+    { key = "o", mods = "LEADER", action = act.PaneSelect({ mode = "SwapWithActive" }) },
+    -- Paneローテーション leader + n / N
+    { key = "n", mods = "LEADER", action = act.RotatePanes("Clockwise") },
+    { key = "N", mods = "LEADER|SHIFT", action = act.RotatePanes("CounterClockwise") },
     -- 選択中のPaneのみ表示
     { key = "z", mods = "LEADER", action = act.TogglePaneZoomState },
 
