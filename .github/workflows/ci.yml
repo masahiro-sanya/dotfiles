@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate JSON (settings / keybindings)
+        run: |
+          jq . claude/settings.json > /dev/null
+          jq . claude/keybindings.json > /dev/null
+
+      - name: Forbid runtime fields in settings.json
+        run: |
+          bad="$(jq -r 'keys[] | select(. == "model" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")' claude/settings.json)"
+          if [ -n "$bad" ]; then
+            echo "runtime fields must not be committed: $bad" >&2
+            exit 1
+          fi
+
+      - name: Bash syntax check
+        run: |
+          for f in claude/hooks/*.sh claude/hooks/tests/*.sh claude/statusline.sh setup.sh; do
+            if [ -f "$f" ]; then
+              bash -n "$f"
+              echo "syntax OK: $f"
+            fi
+          done
+
+      - name: shellcheck
+        run: shellcheck -S warning claude/hooks/*.sh claude/hooks/tests/*.sh claude/statusline.sh
+
+      - name: Hooks regression tests
+        run: bash claude/hooks/tests/run-tests.sh
