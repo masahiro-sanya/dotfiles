@@ -1,12 +1,12 @@
 ---
 name: morning
-description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Skill, Task
+description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックスとguard発火の点検）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Skill, Task
 ---
 
 # 朝一ルーチン
 
-毎朝最初に実行する個人ワークフロー。6 ステップ（手順 6 は月初のみ）なので **TaskCreate で進捗管理** すること。
+毎朝最初に実行する個人ワークフロー。7 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること。
 
 ## 手順
 
@@ -86,6 +86,15 @@ Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 
 その月の最初の /morning でだけ実施する。月次判定と実施手順は同ディレクトリの `memory-reflow.md` を **Read して従う**。月初でない（今月実施済み）ならスキップし、サマリにその旨を出す。
 
+### 7. 週次ハーネス健全性（週初のみ）
+
+その週の最初の /morning でだけ実施する。`~/.claude/.morning-harness-health-last` を Read し、中身が今週（`date +%G-W%V` の値、例 `2026-W28`）と一致したらスキップ（サマリに「今週実施済み」）。異なる・ファイルが無いなら実施し、完了後に今週の値を Write する。
+
+ハーネスが実際に効いているかを週1で点検する。**ここは点検が目的で、見つけた改善はその場で書き換えず、必要なら別途 feature branch で対応する。**
+
+1. **委譲の偏り**: `~/.claude/skills/morning/agent-usage.py 7` を実行し、直近7日の Task 委譲を subagent_type 別に表示する。**general-purpose に寄りすぎていないか**を 1-2 行で講評する（例: 「調査・検証は investigator / verify-runner に寄せられたはず」）。狙いは自作エージェントへ委譲が移っているかの定点観測。
+2. **guard の発火**: `~/.claude/guard-hits.log`（あれば）を Read し、reason 別に発火件数を集計して見せる。**誤爆に見える発火**（正当な操作をブロックした形跡）があれば「このガードは誤爆、緩めるか要検討」、**ずっと発火ゼロのガード**があれば「出番がないだけか死んでいるか要確認」と添える。ログが無ければ「発火なし」でよい。
+
 ## 最終サマリ
 
 全ステップ完了後、以下を出す：
@@ -99,6 +108,7 @@ Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 4. PR: レビュー待ち <N> 件 / 自分のPR <N> 件
 5. collect-feed: <N> 件 Notion 登録
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
+7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件（または "今週実施済み" / "週初でないためスキップ"）
 ```
 
 ## 注意事項

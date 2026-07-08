@@ -13,6 +13,15 @@ log_fail() {
     echo "$(date '+%Y-%m-%dT%H:%M:%S%z') guard-bash-command.sh: $1" >> "${HOME}/.claude/hooks-error.log" 2>/dev/null || true
 }
 
+# ブロック（exit 2）発火を1行TSVで記録する。誤爆・死物を後から追うためのテレメトリ。
+# ベストエフォート: 記録に失敗してもブロック自体は壊さない。テスト用に GUARD_HITS_LOG で差し替え可
+GUARD_HITS_LOG="${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
+log_block() {
+    detail="$(printf '%s' "$2" | /usr/bin/tr '\t\n' '  ' | /usr/bin/cut -c1-200)"
+    printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" 'guard-bash-command' "$1" "${detail}" \
+        >> "${GUARD_HITS_LOG}" 2>/dev/null || true
+}
+
 input="$(cat)"
 cmd="$(printf '%s' "${input}" | /usr/bin/jq -r '.tool_input.command // empty' 2>/dev/null)"
 jq_status=$?
@@ -29,11 +38,13 @@ fi
 cmd_pos='(^|[|;&(]|\$\(|`)[[:space:]]*(command[[:space:]]+)?(sudo[[:space:]]+)?'
 
 if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}(grep|egrep|fgrep)([[:space:]]|$)"; then
+    log_block "grep-blocked" "${cmd}"
     echo "grep は使わない（CLAUDE.md）。rg（ripgrep）で書き直してください。例: rg -n 'pattern' path/" >&2
     exit 2
 fi
 
 if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; then
+    log_block "find-blocked" "${cmd}"
     echo "find は使わない（CLAUDE.md）。fd で書き直してください。例: fd 'name' path/ / fd -e go" >&2
     exit 2
 fi
@@ -43,6 +54,7 @@ fi
 cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs; s/'[^']*'//gs" 2>/dev/null || printf '%s' "${cmd}")"
 
 if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}git[[:space:]][^|;&]*[[:space:]]--no-verify"; then
+    log_block "no-verify-blocked" "${cmd_stripped}"
     echo "--no-verify は禁止（CLAUDE.md「テストを無効化・スキップしない」）。フックが失敗するなら原因を修正してください。" >&2
     exit 2
 fi
@@ -58,6 +70,7 @@ if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}git([[:space:]
     if [ "${branch}" = "main" ] || [ "${branch}" = "master" ]; then
         repo_root="$(git -C "${commit_dir}" rev-parse --show-toplevel 2>/dev/null || true)"
         if [ -n "${repo_root}" ] && [ ! -f "${repo_root}/.claude-allow-main" ]; then
+            log_block "main-commit-blocked" "branch=${branch} ${cmd_stripped}"
             echo "main には直接コミットしない（CLAUDE.md）。feature branch を切ってから commit してください（例: git checkout -b feat/xxx）。このリポで main 直コミットを許可する場合はユーザー承認の上 repo root に .claude-allow-main を置く。" >&2
             exit 2
         fi

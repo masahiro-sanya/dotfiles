@@ -13,6 +13,9 @@ HOOKS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
 trap 'command rm -rf "${TMP_ROOT}"' EXIT
 
+# ブロック発火テレメトリのログを本物（~/.claude/guard-hits.log）でなくテスト用に向ける
+export GUARD_HITS_LOG="${TMP_ROOT}/guard-hits.log"
+
 PASS=0
 FAIL=0
 
@@ -108,6 +111,43 @@ assert 0 guard-test-skip.sh "非テストファイルの skip 文字列は許可
 assert 0 guard-test-skip.sh "テストファイルへの通常編集は許可" "$(edit_json "foo_test.go" "assert.Equal(t, 1, got)")"
 assert 2 guard-test-skip.sh "spec ファイルへの xit はブロック" "$(edit_json "src/foo.spec.ts" "x""it('works', () => {})")"
 assert 0 guard-test-skip.sh "壊れた JSON は fail-open" "{broken json"
+
+echo "== guard-hits テレメトリ =="
+
+# ブロック時に GUARD_HITS_LOG へ 1 行記録されることを確認する
+# check_logged <説明> <期待reason> <hook> <JSON> [run_dir]
+check_logged() {
+    desc="$1"; want="$2"; hook="$3"; json="$4"; run_dir="${5:-${TMP_ROOT}}"
+    command rm -f "${GUARD_HITS_LOG}"
+    ( cd "${run_dir}" && printf '%s' "${json}" | bash "${HOOKS_DIR}/${hook}" >/dev/null 2>&1 )
+    if [ -f "${GUARD_HITS_LOG}" ] && /usr/bin/grep -q "${want}" "${GUARD_HITS_LOG}"; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（${want} が記録されていない）"
+    fi
+}
+
+# 許可（exit 0）のときは記録しないことを確認する
+# check_not_logged <説明> <hook> <JSON> [run_dir]
+check_not_logged() {
+    desc="$1"; hook="$2"; json="$3"; run_dir="${4:-${TMP_ROOT}}"
+    command rm -f "${GUARD_HITS_LOG}"
+    ( cd "${run_dir}" && printf '%s' "${json}" | bash "${HOOKS_DIR}/${hook}" >/dev/null 2>&1 )
+    if [ ! -f "${GUARD_HITS_LOG}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（許可なのに記録された）"
+    fi
+}
+
+check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep foo bar.txt")"
+check_not_logged "fd 許可は記録しない" guard-bash-command.sh "$(bash_json "fd -e go")"
+
+# レビューゲート: 通過記録を消して未レビュー状態に戻してから確認する
+command rm -f "${gated_git_dir}/claude-reviewed-sha"
+check_logged "レビューゲートブロックを記録する" "review-gate-blocked" guard-review-push.sh "$(bash_json "git push")" "${REPO_GATED}"
+
+check_logged "test-skip ブロックを記録する" "test-skip-blocked" guard-test-skip.sh "$(edit_json "foo_test.go" "t.Sk""ip(\"x\")")"
 
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
