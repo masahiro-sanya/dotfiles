@@ -40,7 +40,9 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
 
 材料を集めて「今日のタスク内容と目標」を作る:
 
-1. 前日（直近）の `~/.claude/daily-report/*.md` の「明日やること」を読む
+> **morning から呼ばれたとき（連携モード）**: `/morning` の手順 8 から起動された場合は、**今日のセッション調査（未完タスクの実態）と自分のオープン PR が既に渡される**。step 3 の PR 再取得はスキップして渡された一覧を使い、渡されたセッション調査を step 1 の「明日やること」と併せて宣言の材料にする（宣言に書いたつもりと "実際どこで止まっていたか" を突き合わせ、地に足のついた宣言にする）。単独で `/daily-report 朝` を叩いたときは従来どおり下記を自分で集める。
+
+1. 前日（直近）の `~/.claude/daily-report/*.md` の「明日やること」を読む（**morning 連携時は、渡された当日のセッション調査＝未完タスクの実態も併せて材料にする**）
 2. **前日の採点を読む（＝今日の目標を立てる軸。最重要）**。夜モードで Notion に付けた辛口採点を引き継ぎ、今日の目標に反映する:
    - 先に eval-config.json を読む（無ければこの step は ⚠️ でスキップ）。`notion-query-data-sources` で直近の採点行を取る（`{log_db}`。以下 SQL の `{log_db}` は設定値に置換）:
      ```sql
@@ -48,7 +50,7 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
      FROM "{log_db}" ORDER BY "実施日" DESC LIMIT 3
      ```
    - 実データの最新 1 行を使う（`📝 記入例`＝実施日が空の行は除外）。読めない / 前日採点が無い時は ⚠️ で明示し、前日ファイルの「明日やること」だけを軸に進める（催促しない）
-3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`
+3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`（**morning 連携時は再取得せず、渡されたオープン PR 一覧を使う**）
 4. ユーザーと 1-2 往復で確定し、当日ファイルに保存する:
 
 ```
