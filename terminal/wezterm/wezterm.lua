@@ -108,13 +108,77 @@ local function repo_name(cwd)
   return name
 end
 
+-- Claude Code の稼働状態を hook から受け取る。
+-- hook (claude/hooks/wezterm-status.sh) が pane_id 単位の状態ファイル
+--   ~/.claude/wezterm-state/pane-<pane_id>   （中身: busy|waiting|idle|sub:N）
+-- を書くので、それを読むだけ。OSC(SetUserVar)を使わないのは、Claude Code の hook 子
+-- プロセスに制御端末が無く /dev/tty へ OSC を出しても WezTerm に届かないため。
+local CLAUDE_STATE_DIR = (os.getenv("HOME") or "") .. "/.claude/wezterm-state"
+local function read_claude_state(pane_id)
+  if pane_id == nil then
+    return nil
+  end
+  local f = io.open(CLAUDE_STATE_DIR .. "/pane-" .. tostring(pane_id), "r")
+  if not f then
+    return nil
+  end
+  local v = f:read("*l")                          -- hook は改行なしで1語だけ書く
+  f:close()
+  return v
+end
+
+-- 状態キー → 表示（アイコン・文言・背景色 active/非active の明暗2段）。サブは総数 n を文言に使う。
+local function status_display(key, n)
+  if key == "sub" then
+    return { icon = "⚙", label = "サブ×" .. n, bg = "#6f4a9c", bg_dim = "#43305e" }
+  elseif key == "busy" then
+    return { icon = "●", label = "実行中", bg = "#2f6f9f", bg_dim = "#204d6e" }
+  elseif key == "waiting" then
+    return { icon = "⚠", label = "要対応", bg = "#c0562a", bg_dim = "#7f3a1c" }
+  elseif key == "idle" then
+    return { icon = "✓", label = "待機中", bg = "#4a7c59", bg_dim = "#33553d" }
+  end
+  return nil
+end
+
+-- タブ内の全ペインの Claude 状態を緊急度で集約する。分割で複数セッションを回しても、
+-- 一番注意が要るものをタブに出す。優先度: 要対応 > サブ稼働(総数合算) > 実行中 > 待機中。
+-- どのペインにも状態が無ければ nil（タブはリポ名だけ）。
+local function claude_tab_status(panes)
+  local any_waiting, any_busy, any_idle = false, false, false
+  local sub_total = 0
+  for _, p in ipairs(panes) do
+    local v = read_claude_state(p.pane_id)
+    if v and v ~= "" then
+      local n = v:match("^sub:(%d+)$")
+      if n then
+        sub_total = sub_total + tonumber(n)
+      elseif v == "waiting" then
+        any_waiting = true
+      elseif v == "busy" then
+        any_busy = true
+      elseif v == "idle" then
+        any_idle = true
+      end
+    end
+  end
+  if any_waiting then return status_display("waiting") end
+  if sub_total > 0 then return status_display("sub", sub_total) end
+  if any_busy then return status_display("busy") end
+  if any_idle then return status_display("idle") end
+  return nil
+end
+
 wezterm.on("format-tab-title", function(tab, tabs, panes, config, hover, max_width)
+  -- Claude 稼働状態(タブ内全ペインを緊急度で集約)があれば状態色、無ければ従来の active/非active 色。
+  local status = claude_tab_status(tab.panes)
   local background = "#5c6d74"
   local foreground = "#FFFFFF"
   local edge_background = "none"
-  if tab.is_active then
+  if status then
+    background = tab.is_active and status.bg or status.bg_dim
+  elseif tab.is_active then
     background = "#ae8b2d"
-    foreground = "#FFFFFF"
   end
   local edge_foreground = background
 
@@ -142,6 +206,11 @@ wezterm.on("format-tab-title", function(tab, tabs, panes, config, hover, max_wid
     label = active_repo
   end
 
+  -- Claude 稼働状態を先頭に添える（リポ名より前＝truncate されても状態は残す）
+  if status then
+    label = status.icon .. " " .. status.label .. "  " .. label
+  end
+
   local title = "   " .. wezterm.truncate_right(label, max_width - 1) .. "   "
   return {
     { Background = { Color = edge_background } },
@@ -154,6 +223,20 @@ wezterm.on("format-tab-title", function(tab, tabs, panes, config, hover, max_wid
     { Foreground = { Color = edge_foreground } },
     { Text = SOLID_RIGHT_ARROW },
   }
+end)
+
+-- Claude 稼働状態(ファイル)は busy/idle/sub の遷移時にペイン出力を伴わないことがあり、
+-- その間タブバーが再描画されず表示が固まる（例: 思考中なのに「待機中」／サブ稼働中なのに「実行中」）。
+-- format-tab-title は再描画時しか再評価されないので、update-status を status_update_interval 間隔で
+-- 発火させ、毎回 右ステータスを"内容を変えて"セットしてウィンドウ(=タブバー含む)の再描画を強制する。
+-- 右ステータスを毎回同じにすると WezTerm は「変化なし」で再描画を省くため、不可視のトグル(""↔" ")で
+-- 内容を変える（右端の半角スペースは透過タブバー上で見えない）。これで最大 status_update_interval の
+-- 遅延で状態表示が追従する。
+config.status_update_interval = 1000
+local _repaint_toggle = false
+wezterm.on("update-status", function(window, _pane)
+  _repaint_toggle = not _repaint_toggle
+  window:set_right_status(_repaint_toggle and "" or " ")
 end)
 
 ----------------------------------------------------
