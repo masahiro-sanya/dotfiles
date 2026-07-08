@@ -1,6 +1,6 @@
 ---
 name: morning
-description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックスとguard発火の点検）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
+description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
 allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Skill, Task
 ---
 
@@ -94,6 +94,7 @@ Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 
 1. **委譲の偏り**: `~/.claude/skills/morning/agent-usage.py 7` を実行し、直近7日の Task 委譲を subagent_type 別に表示する。**general-purpose に寄りすぎていないか**を 1-2 行で講評する（例: 「調査・検証は investigator / verify-runner に寄せられたはず」）。狙いは自作エージェントへ委譲が移っているかの定点観測。
 2. **guard の発火**: `~/.claude/guard-hits.log`（あれば）を Read し、reason 別に発火件数を集計して見せる。**誤爆に見える発火**（正当な操作をブロックした形跡）があれば「このガードは誤爆、緩めるか要検討」、**ずっと発火ゼロのガード**があれば「出番がないだけか死んでいるか要確認」と添える。ログが無ければ「発火なし」でよい。
+3. **fail-open インシデント**: `~/.claude/hooks-error.log`（あれば）を Read する。ここに行があるということは、入力異常などで**ガードが exit 0（許可）に倒れた＝その瞬間ガードが実質無効だった**ことを意味する。直近1週間の記録があれば「どの hook のどのパースが落ちたか」を 1-2 行で添え、恒常的に出ているなら hook 側の修正を別 branch で検討する。ログが無ければ「fail-open なし」でよい。guard-hits（発火）と対で、こちらは無効化の可視化。
 
 ## 最終サマリ
 
@@ -108,7 +109,7 @@ Skill ツールで `collect-feed:collect-feed` を起動。引数なし。
 4. PR: レビュー待ち <N> 件 / 自分のPR <N> 件
 5. collect-feed: <N> 件 Notion 登録
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
-7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件（または "今週実施済み" / "週初でないためスキップ"）
+7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件・fail-open <L> 件（または "今週実施済み" / "週初でないためスキップ"）
 ```
 
 ## 注意事項
