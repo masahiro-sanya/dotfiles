@@ -62,6 +62,18 @@ if command -v eza >/dev/null 2>&1; then
   alias lt='eza --tree --level=2 --group-directories-first'
 fi
 
+# --- wezterm: カレントディレクトリを OSC 7 で通知 ---
+# prezto の terminal モジュールは Apple_Terminal 限定でしか OSC 7 を出さない。
+# wezterm でタブ名にリポ名を出すには pane の cwd が要るので、自前で補う。
+# cw は `cd <repo> && claude` なので、claude 起動直前の cd(chpwd) で repo が通知される。
+if [[ -n "$WEZTERM_PANE" ]]; then
+  autoload -Uz add-zsh-hook
+  _wezterm_osc7() { printf '\e]7;file://%s%s\a' "${HOST}" "${PWD// /%20}"; }
+  add-zsh-hook chpwd _wezterm_osc7
+  add-zsh-hook precmd _wezterm_osc7
+  _wezterm_osc7
+fi
+
 # --- Claude Code: 個別リポ cwd 起動 ---
 # ~/src・~/src/palmu（親ディレクトリ）で claude を起動すると memory や
 # プロジェクト設定が親側に分散するため、個別リポでの起動を習慣化する。
