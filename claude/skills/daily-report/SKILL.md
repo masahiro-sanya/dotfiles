@@ -77,7 +77,7 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
 
 ## 夜モード: 収集して振り返る
 
-**収集（調査）は全て investigator サブエージェントに委譲する。** step 1-3 の各ソースを `Task`（`investigator`）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。4 ソースは独立なので **1 メッセージで並列に投げる**。返ってきた要約だけを step 4-5 の入力にする。investigator は read 専任・要約返却が既定なので、渡すのは「当日分だけ・PR/コミット/スレッドの URL 付き」という**範囲指定**でよい。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
+**収集（調査）は全て investigator サブエージェントに委譲する。** step 1・2・3a・3b の 4 ソースを `Task`（`investigator`）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。**この 4 本は独立なので 1 メッセージでまとめて並列に投げる**（1 本ずつ順番に投げない＝これが夜の体感速度を決める）。返ってきた要約だけを step 4-5 の入力にする。investigator は read 専任・要約返却が既定なので、渡すのは「当日分だけ・PR/コミット/スレッドの URL 付き」という**範囲指定**でよい。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
 
 各サブエージェントに渡す調査内容:
 
@@ -106,9 +106,9 @@ gh search prs --reviewed-by=@me --json url,title,repository,author --limit 30 --
 
 フラグがエラーになったら `gh search prs --help` で確認して読み替える（結果ゼロとエラーを混同しない）。
 
-### 3. 当日の Claude セッション・memory・Slack を確認
+### 3a. 当日の Claude セッション・memory を確認（ローカル読み取り）
 
-git/PR に現れない作業（調査・設計・レビュー・運用対応・**Slack での議論**）をここで拾う。**これが可視化ギャップの本丸**。以下 3 つを 1 つの investigator にまとめて調べさせてよい:
+git/PR に現れない作業（調査・設計・レビュー・運用対応）の足跡を、ローカルの履歴と memory から拾う。**読み口が Bash とローカル fd/jq なので、Slack 検索（3b）とは別 investigator に割って並列で投げる**（別ツールを別 Task で同時に走らせて速くする）:
 
 ```bash
 # 当日触ったプロジェクトとプロンプト概要（スキーマは実物を head で確認してから jq を書く）
@@ -118,11 +118,17 @@ jq -r 'select(.timestamp != null)' ~/.claude/history.jsonl | tail -50   # 当日
 fd . ~/.claude/projects --glob '*.md' --changed-within 1d
 ```
 
+→ investigator は Claude セッション・memory を横断し、成果につながる動き（何を調べ / 設計し / 直したか）だけを要約して返す。
+
+### 3b. 当日の Slack を確認
+
+git/PR に現れない **Slack での議論・相談・運用対応**を拾う。**これが可視化ギャップの本丸**。3a とは別 investigator で並列に投げる（Slack 検索は API 往復で遅くなりがちなので、ローカル読みと重ねて待ち時間を隠す）:
+
 - **Slack（調査・相談・運用対応の一次ソース。ユーザーは日報でこれを見ることに同意済み）**: 当日の自分の発言・スレッドを検索する
   - `slack_search_public_and_private` で query = `from:<@自分の user_id> on:<当日 YYYY-MM-DD>`、`sort=timestamp`（自分の user_id はツール説明に `Current logged in user's user_id is …` として表示されるのでそれを使う。公開リポに ID を直書きしない）
   - private チャンネル/DM でも調査・相談が起きるので public 限定にしない
   - 目ぼしいスレッドは `slack_read_thread` で深掘りし、「何を調べ / 決め / 対応したか」を要約（雑談は落とす）
-→ investigator は Claude セッション・memory・Slack を横断し、成果につながる動きだけを URL 付きで要約して返す。
+→ investigator は当日の Slack を横断し、成果につながる議論・対応だけを URL 付きで要約して返す。
 
 ### 4. 朝の宣言と突き合わせて日報を組み立てる
 
