@@ -50,9 +50,12 @@ COST_FMT=$(printf '%.2f' "$COST")
 MINS=$((DURATION_MS / 60000))
 SECS=$(( (DURATION_MS % 60000) / 1000 ))
 
-# Git branch（セッションの作業ディレクトリ基準。statusline プロセスの cwd に依存しない）
+# Git repo / branch（セッションの作業ディレクトリ基準。statusline プロセスの cwd に依存しない）
 [ -z "$CURRENT_DIR" ] && CURRENT_DIR="$PWD"
 BRANCH=$(git -C "$CURRENT_DIR" branch --show-current 2>/dev/null)
+TOPLEVEL=$(git -C "$CURRENT_DIR" rev-parse --show-toplevel 2>/dev/null)
+REPO=""
+[ -n "$TOPLEVEL" ] && REPO=$(basename "$TOPLEVEL")
 
 # Build output
 OUT=""
@@ -61,6 +64,10 @@ OUT="${OUT}  ${COLOR}${BAR} ${PCT}%${RESET}"
 OUT="${OUT}  \033[32m\$${COST_FMT}${RESET}"
 OUT="${OUT}  ⏱ ${MINS}m${SECS}s"
 OUT="${OUT}  \033[32m+${ADDED}\033[0m/\033[31m-${REMOVED}${RESET}"
+
+if [ -n "$REPO" ]; then
+  OUT="${OUT}  \033[1;37m${REPO}${RESET}"
+fi
 
 if [ -n "$BRANCH" ]; then
   OUT="${OUT}  \033[34m⎇ ${BRANCH}${RESET}"
