@@ -13,6 +13,15 @@ log_fail() {
     echo "$(date '+%Y-%m-%dT%H:%M:%S%z') guard-review-push.sh: $1" >> "${HOME}/.claude/hooks-error.log" 2>/dev/null || true
 }
 
+# ブロック（exit 2）発火を1行TSVで記録する。誤爆・死物を後から追うためのテレメトリ。
+# ベストエフォート: 記録に失敗してもブロック自体は壊さない。テスト用に GUARD_HITS_LOG で差し替え可
+GUARD_HITS_LOG="${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
+log_block() {
+    detail="$(printf '%s' "$2" | /usr/bin/tr '\t\n' '  ' | /usr/bin/cut -c1-200)"
+    printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" 'guard-review-push' "$1" "${detail}" \
+        >> "${GUARD_HITS_LOG}" 2>/dev/null || true
+}
+
 input="$(cat)"
 cmd="$(printf '%s' "${input}" | /usr/bin/jq -r '.tool_input.command // empty' 2>/dev/null)"
 jq_status=$?
@@ -55,5 +64,6 @@ reviewed_sha="$(cat "${git_dir}/claude-reviewed-sha" 2>/dev/null || true)"
 
 [ "${reviewed_sha}" = "${head_sha}" ] && exit 0
 
+log_block "review-gate-blocked" "dir=${dir} head=${head_sha} reviewed=${reviewed_sha:-none}"
 echo "レビューゲート: このリポは push 前にローカルレビュー必須です（.claude-review-gate あり）。/review-push スキルでレビューを通過させてから push してください。レビュー後に新しいコミットを積んだ場合も再実行が必要です。（通過記録: ${reviewed_sha:-なし} / HEAD: ${head_sha}）" >&2
 exit 2
