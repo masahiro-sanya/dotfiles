@@ -78,6 +78,12 @@ assert 0 guard-bash-command.sh "git grep は許可（コマンド位置でない
 assert 0 guard-bash-command.sh "引数中の grep は許可" "$(bash_json "rg -n 'use grep here' docs/")"
 assert 2 guard-bash-command.sh "find はブロック" "$(bash_json "find . -name '*.go'")"
 assert 0 guard-bash-command.sh "fd は許可" "$(bash_json "fd -e go")"
+assert 2 guard-bash-command.sh "素の rm はブロック" "$(bash_json "rm foo.txt")"
+assert 2 guard-bash-command.sh "&& 後の素の rm もブロック" "$(bash_json "cd /tmp && rm x")"
+assert 0 guard-bash-command.sh "command rm は許可（正規の回避形）" "$(bash_json "command rm -f foo")"
+assert 0 guard-bash-command.sh "sudo rm は許可（エイリアス迂回）" "$(bash_json "sudo rm -f /var/x")"
+assert 0 guard-bash-command.sh "rmdir は誤爆しない" "$(bash_json "rmdir emptydir")"
+assert 0 guard-bash-command.sh "引用符内の rm 文字列は許可" "$(bash_json "rg -n 'rm -rf' docs/")"
 assert 2 guard-bash-command.sh "--no-verify はブロック" "$(bash_json "git commit --no-verify -m x")" "${REPO_FEATURE}"
 assert 0 guard-bash-command.sh "引用符内の --no-verify は許可" "$(bash_json "git commit -m 'do not use --no-verify'")" "${REPO_FEATURE}"
 assert 2 guard-bash-command.sh "main での git commit はブロック（PWD 判定）" "$(bash_json "git commit -m x")" "${REPO_MAIN}"
@@ -141,7 +147,9 @@ check_not_logged() {
 }
 
 check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep foo bar.txt")"
+check_logged "素の rm ブロックを記録する" "bare-rm-blocked" guard-bash-command.sh "$(bash_json "rm foo.txt")"
 check_not_logged "fd 許可は記録しない" guard-bash-command.sh "$(bash_json "fd -e go")"
+check_not_logged "command rm 許可は記録しない" guard-bash-command.sh "$(bash_json "command rm -f foo")"
 
 # レビューゲート: 通過記録を消して未レビュー状態に戻してから確認する
 command rm -f "${gated_git_dir}/claude-reviewed-sha"

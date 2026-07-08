@@ -49,6 +49,18 @@ if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; t
     exit 2
 fi
 
+# 素の rm をブロック（CLAUDE.md「この環境の rm は -i エイリアス。非対話実行では
+# 削除されないまま exit 0 になる → command rm -f を使い ls で裏取り」の機械化）。
+# 正規の回避形である `command rm` / `sudo rm`（どちらもエイリアスを迂回する）は許可したいので、
+# cmd_pos の command/sudo プレフィックス付きアンカーは使わず、区切り直後の rm だけを検知する。
+# `command rm` は rm が区切り直後に来ない（command の後）ため、この pattern には一致しない。
+rm_pos='(^|[|;&(]|\$\(|`)[[:space:]]*'
+if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${rm_pos}rm([[:space:]]|$)"; then
+    log_block "bare-rm-blocked" "${cmd}"
+    echo "素の rm は使わない（CLAUDE.md）。この環境の rm は -i エイリアスで、非対話実行だと削除されないまま exit 0 になる。command rm -f で実行し、削除後に ls で裏取りしてください。" >&2
+    exit 2
+fi
+
 # --no-verify / git commit 検知はクォート内（コミットメッセージ等のデータ）を
 # 除去してから判定する（メッセージ本文に書いただけで誤爆しないように）
 cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs; s/'[^']*'//gs" 2>/dev/null || printf '%s' "${cmd}")"
