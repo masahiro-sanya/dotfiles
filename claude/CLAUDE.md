@@ -14,6 +14,7 @@
 - 文字列検索: `rg`（ripgrep）を優先、`grep` は使わない
 - ファイル検索: `fd` を優先、`find` は使わない
 - ライブラリのドキュメント: context7 MCP を優先
+- memory（運用知見）の書き込みは `~/.claude/projects/*/memory`（`MEMORY.md` 索引 + 個別 md）に一元化する。serena の `write_memory` は使わない（serena memory は読むだけ。二重管理を避ける）
 
 ## 作業の委譲先（subagent ルーティング）
 
@@ -28,4 +29,4 @@
 - 現在の文脈を引き継いだ独立・並行作業 → **fork**
 - 上のどれにも当てはまらない汎用タスクのみ → general-purpose
 
-実装・コミット・push・レビュー返信・リリース操作など**書き込みを伴う作業は main か専用スキル**で行う（read 専用の調査 agent には投げない）。独立した調査は 1 メッセージで並列に投げる。
+実装・コミット・push・レビュー返信・リリース操作など**書き込みを伴う作業は read 専用の調査 agent には投げない**。ただし**独立して仕様が閉じた実装スライス**（例: テーブル追加＋ハンドラ＋テストのような定型）は、`superpowers` の subagent-driven-development / dispatching-parallel-agents の型で書き込み可能な fresh agent に切り出してよい。フル文脈と人間の舵取りが要る実装だけ main に残す。独立した調査は 1 メッセージで並列に投げる。
