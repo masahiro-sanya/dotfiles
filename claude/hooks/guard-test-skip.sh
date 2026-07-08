@@ -6,9 +6,19 @@
 
 set -u
 
-# fail-open（入力異常で exit 0）する経路の痕跡を残す。ログ失敗で hook 自体は壊さない
+# fail-open（入力異常で exit 0）する経路の痕跡を残す。ログ失敗で hook 自体は壊さない。
+# テスト用に HOOKS_ERROR_LOG で差し替え可。
+HOOKS_ERROR_LOG="${HOOKS_ERROR_LOG:-${HOME}/.claude/hooks-error.log}"
 log_fail() {
-    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') guard-test-skip.sh: $1" >> "${HOME}/.claude/hooks-error.log" 2>/dev/null || true
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') guard-test-skip.sh: $1" >> "${HOOKS_ERROR_LOG}" 2>/dev/null || true
+}
+
+# jq が入力パースに失敗したときの診断文字列。生データ（ファイル内容＝機密の恐れ）は残さず、
+# 入力バイト数と jq のパースエラー位置（何バイト目で切れたか）だけを残して真因を次回捕捉する。
+diag_input() {
+    _bytes="$(printf '%s' "$1" | /usr/bin/wc -c | /usr/bin/tr -d ' ')"
+    _jqerr="$(printf '%s' "$1" | /usr/bin/jq -r '.' 2>&1 1>/dev/null | /usr/bin/tr '\t\n' '  ' | /usr/bin/cut -c1-160)"
+    printf 'bytes=%s jqerr=[%s]' "${_bytes}" "${_jqerr}"
 }
 
 # ブロック（exit 2）発火を1行TSVで記録する。誤爆・死物を後から追うためのテレメトリ。
@@ -25,7 +35,7 @@ input="$(cat)"
 file_path="$(printf '%s' "${input}" | /usr/bin/jq -r '.tool_input.file_path // empty' 2>/dev/null)"
 jq_status=$?
 if [ "${jq_status}" -ne 0 ]; then
-    log_fail "jq parse failed for file_path (exit ${jq_status})"
+    log_fail "jq parse failed for file_path (exit ${jq_status}) $(diag_input "${input}")"
     exit 0
 fi
 # file_path キー不在は対象外ツールのペイロード等の正常 skip（ログしない）
@@ -43,7 +53,7 @@ content="$(printf '%s' "${input}" | /usr/bin/jq -r '
     else empty end' 2>/dev/null)"
 jq_status=$?
 if [ "${jq_status}" -ne 0 ]; then
-    log_fail "jq parse failed for content (exit ${jq_status})"
+    log_fail "jq parse failed for content (exit ${jq_status}) $(diag_input "${input}")"
     exit 0
 fi
 [ -z "${content}" ] && exit 0

@@ -15,6 +15,9 @@ trap 'command rm -rf "${TMP_ROOT}"' EXIT
 
 # ブロック発火テレメトリのログを本物（~/.claude/guard-hits.log）でなくテスト用に向ける
 export GUARD_HITS_LOG="${TMP_ROOT}/guard-hits.log"
+# fail-open の痕跡ログも本物（~/.claude/hooks-error.log）でなくテスト用に向ける
+# （テスト実行で本物のログを汚さない・fail-open 診断の記録内容を検証できるようにする）
+export HOOKS_ERROR_LOG="${TMP_ROOT}/hooks-error.log"
 
 PASS=0
 FAIL=0
@@ -156,6 +159,45 @@ command rm -f "${gated_git_dir}/claude-reviewed-sha"
 check_logged "レビューゲートブロックを記録する" "review-gate-blocked" guard-review-push.sh "$(bash_json "git push")" "${REPO_GATED}"
 
 check_logged "test-skip ブロックを記録する" "test-skip-blocked" guard-test-skip.sh "$(edit_json "foo_test.go" "t.Sk""ip(\"x\")")"
+
+echo "== fail-open 診断計装 =="
+
+# 壊れた JSON で fail-open したとき、真因究明用に bytes= と jqerr=（パース位置）が
+# hooks-error.log に残ることを確認する。生データは残さない設計なのでキーの有無だけ見る。
+# check_diag <説明> <hook> <JSON> [run_dir]
+check_diag() {
+    desc="$1"; hook="$2"; json="$3"; run_dir="${4:-${TMP_ROOT}}"
+    command rm -f "${HOOKS_ERROR_LOG}"
+    ( cd "${run_dir}" && printf '%s' "${json}" | bash "${HOOKS_DIR}/${hook}" >/dev/null 2>&1 )
+    if [ -f "${HOOKS_ERROR_LOG}" ] \
+        && /usr/bin/grep -q 'bytes=' "${HOOKS_ERROR_LOG}" \
+        && /usr/bin/grep -q 'jqerr=' "${HOOKS_ERROR_LOG}"; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（bytes=/jqerr= が記録されていない）"
+    fi
+}
+
+# 正常な JSON（キー不在含む）では fail-open ログを残さない（診断の誤発火防止）
+# check_no_diag <説明> <hook> <JSON> [run_dir]
+check_no_diag() {
+    desc="$1"; hook="$2"; json="$3"; run_dir="${4:-${TMP_ROOT}}"
+    command rm -f "${HOOKS_ERROR_LOG}"
+    ( cd "${run_dir}" && printf '%s' "${json}" | bash "${HOOKS_DIR}/${hook}" >/dev/null 2>&1 )
+    if [ ! -f "${HOOKS_ERROR_LOG}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（正常入力なのに fail-open ログが出た）"
+    fi
+}
+
+check_diag "guard-bash-command は壊れた JSON の診断を残す" guard-bash-command.sh "{broken json"
+check_diag "guard-review-push は壊れた JSON の診断を残す" guard-review-push.sh "{broken json"
+check_diag "guard-test-skip は壊れた JSON の診断を残す（file_path 段）" guard-test-skip.sh "{broken json"
+# guard-test-skip の content 段（file_path は valid で通り、content 抽出でパース失敗）は
+# 単一 jq 入力なので file_path 段で先に捕捉される。ここでは file_path 段の診断で代表させる。
+check_no_diag "正常 JSON では診断を残さない（bash）" guard-bash-command.sh "$(bash_json "ls -la")"
+check_no_diag "キー不在の正常 JSON でも診断を残さない（test-skip）" guard-test-skip.sh "$(bash_json "ls -la")"
 
 echo "== wezterm-status.sh =="
 
