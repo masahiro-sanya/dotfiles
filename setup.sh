@@ -125,6 +125,13 @@ for skill in "$DOTFILES_DIR/claude/skills/"*/; do
     [ -d "$skill" ] && backup_and_link "${skill%/}" "$HOME/.claude/skills/$(basename "${skill%/}")"
 done
 
+# Claude Code agents (link each agent md; plugin-provided agents are managed by the marketplace, not here)
+echo "--- Claude Code Agents ---"
+mkdir -p "$HOME/.claude/agents"
+for agent in "$DOTFILES_DIR/claude/agents/"*.md; do
+    [ -f "$agent" ] && backup_and_link "$agent" "$HOME/.claude/agents/$(basename "$agent")"
+done
+
 # --- mise ---
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
