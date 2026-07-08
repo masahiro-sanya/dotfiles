@@ -167,14 +167,15 @@ mkdir -p "${WT_DIR}"
 WT_PANE="99"                                   # 架空の pane id
 WT_STATE_FILE="${WT_DIR}/pane-${WT_PANE}"
 
-# wt_json <event> <session_id> : hook が読む JSON を組み立てる
+# wt_json <event> <session_id> <agent_id> : hook が読む JSON を組み立てる
 wt_json() {
-    /usr/bin/jq -cn --arg e "$1" --arg s "$2" '{hook_event_name: $e, session_id: $s}'
+    /usr/bin/jq -cn --arg e "$1" --arg s "$2" --arg a "${3:-}" \
+        '{hook_event_name: $e, session_id: $s, agent_id: $a}'
 }
 
-# run_wt <event> <session_id> : WezTerm 内を模して hook を実行する
+# run_wt <event> <session_id> <agent_id> : WezTerm 内を模して hook を実行する
 run_wt() {
-    printf '%s' "$(wt_json "$1" "$2")" | \
+    printf '%s' "$(wt_json "$1" "$2" "$3")" | \
         WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" \
         bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
 }
@@ -184,10 +185,16 @@ wt_read() {
     if [ -f "${WT_STATE_FILE}" ]; then cat "${WT_STATE_FILE}" 2>/dev/null; else printf '__NONE__'; fi
 }
 
-# assert_state <説明> <期待state> <event> <session_id>
+# 同一ペインの状態(表示・メイン・サブ marker)を全消しして各グループを独立させる
+wt_reset() {
+    command rm -f "${WT_DIR}/pane-${WT_PANE}" "${WT_DIR}/main-${WT_PANE}" \
+        "${WT_DIR}/agent-${WT_PANE}-"* 2>/dev/null
+}
+
+# assert_state <説明> <期待state> <event> <session_id> [agent_id]
 assert_state() {
-    desc="$1"; want="$2"; ev="$3"; sess="$4"
-    run_wt "${ev}" "${sess}"
+    desc="$1"; want="$2"; ev="$3"; sess="$4"; aid="${5:-}"
+    run_wt "${ev}" "${sess}" "${aid}"
     got="$(wt_read)"
     if [ "${got}" = "${want}" ]; then
         PASS=$((PASS + 1)); echo "  ok: ${desc}"
@@ -196,19 +203,42 @@ assert_state() {
     fi
 }
 
+# --- グループ1: メイン turn 状態の遷移（サブ無し）---
+wt_reset
 assert_state "UserPromptSubmit → busy(実行中)" "busy" "UserPromptSubmit" "s1"
 assert_state "Notification → waiting(要対応)" "waiting" "Notification" "s1"
 assert_state "Stop → idle(待機中)" "idle" "Stop" "s1"
 assert_state "SessionStart → idle(待機中)" "idle" "SessionStart" "s1"
 
-# サブエージェント数カウンタ（同一 session を共有して連続実行）
-assert_state "SubagentStart 1回目 → sub:1" "sub:1" "SubagentStart" "subseq"
-assert_state "SubagentStart 2回目 → sub:2" "sub:2" "SubagentStart" "subseq"
-assert_state "SubagentStop → sub:1 に戻る" "sub:1" "SubagentStop" "subseq"
-assert_state "SubagentStop で 0 → busy に戻る" "busy" "SubagentStop" "subseq"
-assert_state "余分な SubagentStop でも 0 未満にならず busy" "busy" "SubagentStop" "subseq"
-assert_state "Stop でカウンタリセット → idle" "idle" "Stop" "subseq"
-assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "SessionEnd" "subseq"
+# --- グループ2: 背景サブは親 Stop で消えない（本命の回帰）---
+# 親 turn の Stop はサブ稼働中にも発火する。Stop は main を idle にするだけで
+# サブ marker は消さないので、サブが全部終わるまで sub:N を保つ。
+wt_reset
+assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s2"
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s2" "a1"
+assert_state "SubagentStart a2 → sub:2" "sub:2" "SubagentStart" "s2" "a2"
+assert_state "サブ稼働中の親 Stop でも sub:2 を維持（本命の修正）" "sub:2" "Stop" "s2"
+assert_state "SubagentStop a1 → sub:1" "sub:1" "SubagentStop" "s2" "a1"
+assert_state "SubagentStop a1 二重発火でも sub:1（idempotent）" "sub:1" "SubagentStop" "s2" "a1"
+assert_state "SubagentStop a2 で全終了 → idle" "idle" "SubagentStop" "s2" "a2"
+
+# --- グループ3: 要対応はサブ稼働より優先 ---
+wt_reset
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s3" "a1"
+assert_state "サブ稼働中でも Notification は waiting 優先" "waiting" "Notification" "s3"
+assert_state "サブ終了後も main=waiting なら waiting" "waiting" "SubagentStop" "s3" "a1"
+
+# --- グループ4: SessionStart はサブ marker を掃除（leak 回復）---
+wt_reset
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s4" "a1"
+assert_state "SubagentStart a2 → sub:2" "sub:2" "SubagentStart" "s4" "a2"
+assert_state "SessionStart で marker 一掃 → idle" "idle" "SessionStart" "s4"
+
+# --- グループ5: SessionEnd は状態ファイルを削除（タブをリポ名だけに戻す）---
+wt_reset
+assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s5"
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s5" "a1"
+assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "SessionEnd" "s5"
 
 # 非 WezTerm（WEZTERM_PANE 空）では状態ファイルを作らない・exit 0
 command rm -f "${WT_STATE_FILE}"
