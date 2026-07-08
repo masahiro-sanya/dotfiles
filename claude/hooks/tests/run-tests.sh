@@ -157,6 +157,83 @@ check_logged "レビューゲートブロックを記録する" "review-gate-blo
 
 check_logged "test-skip ブロックを記録する" "test-skip-blocked" guard-test-skip.sh "$(edit_json "foo_test.go" "t.Sk""ip(\"x\")")"
 
+echo "== wezterm-status.sh =="
+
+# WezTerm タブ状態 hook: hook_event_name を見て pane_id 単位の状態ファイル
+#   <WEZTERM_STATE_DIR>/pane-<WEZTERM_PANE>   （中身: busy|waiting|idle|sub:N）
+# を書く。tty も WezTerm も要らない。ファイルの中身をそのまま検証する。
+WT_DIR="${TMP_ROOT}/wt"
+mkdir -p "${WT_DIR}"
+WT_PANE="99"                                   # 架空の pane id
+WT_STATE_FILE="${WT_DIR}/pane-${WT_PANE}"
+
+# wt_json <event> <session_id> : hook が読む JSON を組み立てる
+wt_json() {
+    /usr/bin/jq -cn --arg e "$1" --arg s "$2" '{hook_event_name: $e, session_id: $s}'
+}
+
+# run_wt <event> <session_id> : WezTerm 内を模して hook を実行する
+run_wt() {
+    printf '%s' "$(wt_json "$1" "$2")" | \
+        WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" \
+        bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+}
+
+# 状態ファイルの中身を返す。ファイルが無ければ __NONE__（クリア済みと区別するため）
+wt_read() {
+    if [ -f "${WT_STATE_FILE}" ]; then cat "${WT_STATE_FILE}" 2>/dev/null; else printf '__NONE__'; fi
+}
+
+# assert_state <説明> <期待state> <event> <session_id>
+assert_state() {
+    desc="$1"; want="$2"; ev="$3"; sess="$4"
+    run_wt "${ev}" "${sess}"
+    got="$(wt_read)"
+    if [ "${got}" = "${want}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（expected='${want}', got='${got}'）"
+    fi
+}
+
+assert_state "UserPromptSubmit → busy(実行中)" "busy" "UserPromptSubmit" "s1"
+assert_state "Notification → waiting(要対応)" "waiting" "Notification" "s1"
+assert_state "Stop → idle(待機中)" "idle" "Stop" "s1"
+assert_state "SessionStart → idle(待機中)" "idle" "SessionStart" "s1"
+
+# サブエージェント数カウンタ（同一 session を共有して連続実行）
+assert_state "SubagentStart 1回目 → sub:1" "sub:1" "SubagentStart" "subseq"
+assert_state "SubagentStart 2回目 → sub:2" "sub:2" "SubagentStart" "subseq"
+assert_state "SubagentStop → sub:1 に戻る" "sub:1" "SubagentStop" "subseq"
+assert_state "SubagentStop で 0 → busy に戻る" "busy" "SubagentStop" "subseq"
+assert_state "余分な SubagentStop でも 0 未満にならず busy" "busy" "SubagentStop" "subseq"
+assert_state "Stop でカウンタリセット → idle" "idle" "Stop" "subseq"
+assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "SessionEnd" "subseq"
+
+# 非 WezTerm（WEZTERM_PANE 空）では状態ファイルを作らない・exit 0
+command rm -f "${WT_STATE_FILE}"
+printf '%s' "$(wt_json "UserPromptSubmit" "s1")" | \
+    WEZTERM_PANE= WEZTERM_STATE_DIR="${WT_DIR}" \
+    bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+wt_ec=$?
+if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 非 WezTerm では no-op(ファイル作らず・exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 非 WezTerm no-op（exit=${wt_ec}, file=$([ -f "${WT_STATE_FILE}" ] && echo あり || echo なし)）"
+fi
+
+# 壊れた JSON は fail-open（状態ファイルを作らず exit 0）
+command rm -f "${WT_STATE_FILE}"
+printf '%s' "{broken json" | \
+    WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" \
+    bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+wt_ec=$?
+if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 壊れた JSON は fail-open(ファイル作らず・exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 壊れた JSON fail-open（exit=${wt_ec}, file=$([ -f "${WT_STATE_FILE}" ] && echo あり || echo なし)）"
+fi
+
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
 [ "${FAIL}" -eq 0 ] || exit 1
