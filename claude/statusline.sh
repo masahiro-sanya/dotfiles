@@ -19,8 +19,11 @@ $(printf '%s' "$input" | jq -r '[
 EOF
 
 MODEL=${MODEL:-Claude}
+# 表示用にモデル名の括弧補足を落とす（"Opus 4.8 (1M context)" → "Opus 4.8"）。Fable判定は元のMODELで行う
+MODEL_DISP="${MODEL%% (*}"
 ADDED=${ADDED:-0}
 REMOVED=${REMOVED:-0}
+NOW=$(date +%s 2>/dev/null)
 
 RESET="\033[0m"
 
@@ -33,7 +36,7 @@ REPO=""
 
 # Build output
 OUT=""
-OUT="${OUT}\033[1;35m${MODEL}${RESET}"
+OUT="${OUT}\033[36m${MODEL_DISP}${RESET}"
 
 if [ -n "$REPO" ]; then
   OUT="${OUT}  \033[1;37m${REPO}${RESET}"
@@ -42,6 +45,19 @@ fi
 if [ -n "$BRANCH" ]; then
   OUT="${OUT}  \033[34m⎇ ${BRANCH}${RESET}"
 fi
+
+# epoch秒 → JST文字列。同日は HH:MM、別日は M/D HH:MM。失敗時は空。
+fmt_time() {
+  [ -z "$1" ] && return 0
+  _fday=$(TZ=Asia/Tokyo date -r "$1" +%Y%m%d 2>/dev/null)
+  [ -z "${_fday}" ] && return 0
+  _ftoday=$(TZ=Asia/Tokyo date +%Y%m%d 2>/dev/null)
+  if [ "${_fday}" = "${_ftoday}" ]; then
+    TZ=Asia/Tokyo date -r "$1" +%H:%M 2>/dev/null
+  else
+    TZ=Asia/Tokyo date -r "$1" "+%m/%d %H:%M" 2>/dev/null
+  fi
+}
 
 # --- レート制限 (5h / 週): statusline JSON の rate_limits があるときだけ2行目に出す ---
 # rate_limits は Claude.ai サブスク(Pro/Max)かつ初回API応答後のみ入る。
@@ -54,38 +70,52 @@ render_window() {
   reset="${3%%.*}"
   used_int="${used%%.*}"
   used_int="${used_int:-0}"
-  rem=$((100 - used_int))
-  [ "${rem}" -lt 0 ] && rem=0
-  # 残量バー(6文字): 残量に比例。残ってるのに0マスなら最低1マス点灯
+  [ "${used_int}" -lt 0 ] && used_int=0
+  [ "${used_int}" -gt 100 ] && used_int=100
+  # 消費バー(6文字): 使用率に比例して埋まる(使うほどリミットに近づく)。少しでも使えば最低1マス
   blen=6
-  filled=$((rem * blen / 100))
+  filled=$((used_int * blen / 100))
   [ "${filled}" -gt "${blen}" ] && filled="${blen}"
-  [ "${rem}" -gt 0 ] && [ "${filled}" -eq 0 ] && filled=1
+  [ "${used_int}" -gt 0 ] && [ "${filled}" -eq 0 ] && filled=1
   bar=""
   i=1
   while [ "${i}" -le "${blen}" ]; do
     if [ "${i}" -le "${filled}" ]; then bar="${bar}█"; else bar="${bar}░"; fi
     i=$((i + 1))
   done
-  # 色: 残量が少ないほど危険（赤<20 / 黄<50 / 緑）
-  if [ "${rem}" -lt 20 ]; then wc="\033[31m"
-  elif [ "${rem}" -lt 50 ]; then wc="\033[33m"
+  # 色: 使用率が高いほど危険（緑<50 / 黄<80 / 赤）
+  if [ "${used_int}" -ge 80 ]; then wc="\033[31m"
+  elif [ "${used_int}" -ge 50 ]; then wc="\033[33m"
   else wc="\033[32m"; fi
-  # リセット時刻(JST): 同日は HH:MM、別日は M/D HH:MM
-  rstr=""
-  if [ -n "${reset}" ]; then
-    rday=$(TZ=Asia/Tokyo date -r "${reset}" +%Y%m%d 2>/dev/null)
-    if [ -n "${rday}" ]; then
-      tday=$(TZ=Asia/Tokyo date +%Y%m%d 2>/dev/null)
-      if [ "${rday}" = "${tday}" ]; then
-        rstr=$(TZ=Asia/Tokyo date -r "${reset}" +%H:%M 2>/dev/null)
-      else
-        rstr=$(TZ=Asia/Tokyo date -r "${reset}" "+%m/%d %H:%M" 2>/dev/null)
+  winlen="$4"
+  rstr=$(fmt_time "${reset}")
+
+  # 消費ペース: 窓の経過割合(elapsed%)と使用率(used%)を比較。
+  # 窓開始 = reset - winlen で逆算するだけ→追加データ・トークン不要。
+  # used% が elapsed% を大きく超える=オーバーペース(⇡赤/枯渇ETA)、下回る=余裕(⇣緑)。
+  pace=""
+  timeseg=""
+  if [ -n "${winlen}" ] && [ -n "${NOW}" ] && [ -n "${reset}" ]; then
+    start=$((reset - winlen))
+    elapsed=$((NOW - start))
+    if [ "${elapsed}" -gt 0 ] && [ "${elapsed}" -le "${winlen}" ]; then
+      efrac=$((elapsed * 100 / winlen))
+      delta=$((used_int - efrac))
+      if [ "${delta}" -ge 8 ] && [ "${used_int}" -gt 0 ]; then
+        # このペースだと枯渇する時刻 = start + elapsed*100/used
+        eta=$((start + elapsed * 100 / used_int))
+        etastr=$(fmt_time "${eta}")
+        pace=" \033[31m⇡${RESET}"
+        [ -n "${etastr}" ] && timeseg=" \033[31m尽${etastr}${RESET}"
+      elif [ "${delta}" -le -8 ]; then
+        pace=" \033[32m⇣${RESET}"
       fi
     fi
   fi
-  RL_LINE="${RL_LINE}${RL_LINE:+   }${label} ${wc}${bar} 残${rem}%${RESET}"
-  [ -n "${rstr}" ] && RL_LINE="${RL_LINE} \033[90m→${rstr}${RESET}"
+  # オーバーペースでない(or ETA取れない)ときは通常のリセット(回復)時刻を↻付きで出す
+  [ -z "${timeseg}" ] && [ -n "${rstr}" ] && timeseg=" \033[37m↻${rstr}${RESET}"
+
+  RL_LINE="${RL_LINE}${RL_LINE:+   }${label} ${wc}${bar} \033[1m${used_int}%${RESET}${pace}${timeseg}"
 }
 
 # --- Fable モデル時の注意喚起 (トークン非依存・フラグのみ) ---
@@ -97,8 +127,8 @@ case "${MODEL}" in
 esac
 
 RL_LINE=""
-render_window "5h" "${RL5_PCT}" "${RL5_RESET}"
-render_window "週" "${RL7_PCT}" "${RL7_RESET}"
+render_window "5h" "${RL5_PCT}" "${RL5_RESET}" 18000
+render_window "週" "${RL7_PCT}" "${RL7_RESET}" 604800
 [ -n "${FABLE_WARN}" ] && RL_LINE="${RL_LINE}${RL_LINE:+   }${FABLE_WARN}"
 
 # 1行に畳むか2行に折るかを実ペイン幅($COLUMNS)で決める。
