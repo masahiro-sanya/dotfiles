@@ -27,18 +27,20 @@
 #  - ファイルなら tty/stdout 非依存で全イベント一様に確実。
 #
 # 設計方針（このリポの hooks 共通ルール）:
-#  - fail-open: 何があっても exit 0。Claude をブロックしない。異常は hooks-error.log に痕跡。
+#  - fail-open: 何があっても exit 0。Claude をブロックしない。異常は wezterm-status-error.log に痕跡
+#    （表示系のノイズであって guard の無効化ではないので、週次点検が読む hooks-error.log には混ぜない）。
 #  - macOS 標準 bash 3.2 互換。変数展開は ${var} 形式。
 #  - 非 WezTerm(WEZTERM_PANE 未設定)では完全に no-op（他端末で誤動作しない）。
 #  - stdout には一切書かない。
 #
 # テスト用フック(env で差し替え):
 #  - WEZTERM_STATE_DIR : 状態ファイル群の保存先（既定 ~/.claude/wezterm-state）
+#  - WEZTERM_STATUS_ERROR_LOG : 異常痕跡ログの書き先（既定 ~/.claude/wezterm-status-error.log）
 set -u
 
 log_err() {
   printf '%s wezterm-status: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)" "$1" \
-    >> "${HOME}/.claude/hooks-error.log" 2>/dev/null
+    >> "${WEZTERM_STATUS_ERROR_LOG:-${HOME}/.claude/wezterm-status-error.log}" 2>/dev/null
 }
 
 # 非 WezTerm では無効（fail-safe）

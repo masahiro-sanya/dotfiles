@@ -1,7 +1,7 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task
 ---
 
 # 朝一ルーチン
@@ -10,7 +10,7 @@ allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.
 
 > **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
-> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**タスク一覧（TaskList）で登録を裏取り**する。登録が無い（一覧が空・No tasks found など）なら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば生存を確認する（空振りのまま「実行中」と述べない）。
+> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）と `TaskOutput`（block:false）の生存確認で裏取り**する（TaskList は TODO 一覧＝サブエージェントは載らないので裏取りに使えない）。生存が確認できないなら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば TaskOutput で生存を確認する（完了済みは「No task found」＋結果は完了通知で届く＝失敗ではない。空振りのまま「実行中」と述べない）。
 
 ## 手順
 

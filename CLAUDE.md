@@ -6,7 +6,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 
 ## claude/settings.json
 
-- `model` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**（diff に混入していたら除去してからコミット）
+- `model` / `effortLevel` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**（diff に混入していたら除去してからコミット）
 - コミット前に `jq . claude/settings.json` で JSON 妥当性を確認する
 
 ## claude/hooks/
