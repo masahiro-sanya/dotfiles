@@ -136,18 +136,19 @@ done
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
 
-# --- launchd (morning-prep) ---
+# --- launchd (morning-prep / collect-feed-prep) ---
 echo "--- launchd ---"
-MORNING_PREP_LABEL="com.masahrosanya.morning-prep"
-MORNING_PREP_PLIST="$HOME/Library/LaunchAgents/${MORNING_PREP_LABEL}.plist"
-backup_and_link "$DOTFILES_DIR/launchd/${MORNING_PREP_LABEL}.plist" "$MORNING_PREP_PLIST"
-if launchctl print "gui/$(id -u)/${MORNING_PREP_LABEL}" >/dev/null 2>&1; then
-    warn "launchd already loaded: ${MORNING_PREP_LABEL}"
-elif launchctl bootstrap "gui/$(id -u)" "$MORNING_PREP_PLIST" 2>/dev/null; then
-    info "launchd loaded: ${MORNING_PREP_LABEL}"
-else
-    error "launchctl bootstrap failed: ${MORNING_PREP_PLIST}"
-fi
+for LAUNCHD_LABEL in com.masahrosanya.morning-prep com.masahrosanya.collect-feed-prep; do
+    LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
+    backup_and_link "$DOTFILES_DIR/launchd/${LAUNCHD_LABEL}.plist" "$LAUNCHD_PLIST"
+    if launchctl print "gui/$(id -u)/${LAUNCHD_LABEL}" >/dev/null 2>&1; then
+        warn "launchd already loaded: ${LAUNCHD_LABEL}"
+    elif launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" 2>/dev/null; then
+        info "launchd loaded: ${LAUNCHD_LABEL}"
+    else
+        error "launchctl bootstrap failed: ${LAUNCHD_PLIST}"
+    fi
+done
 
 # --- Git hooks (dotfiles リポ自身の pre-commit) ---
 echo "--- Git hooks ---"

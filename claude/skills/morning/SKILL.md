@@ -8,7 +8,7 @@ allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.
 
 毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること。
 
-> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
+> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。ただし手順 5 は `~/.claude/.collect-feed-last` が今日なら朝前の launchd（collect-feed-prep）で収集済み＝バッチから外し、レポートを読むだけにする（手順 5 の事前実行チェック参照）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
 > **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）と `TaskOutput`（block:false）の生存確認で裏取り**する（TaskList は TODO 一覧＝サブエージェントは載らないので裏取りに使えない）。生存が確認できないなら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば TaskOutput で生存を確認する（完了済みは「No task found」＋結果は完了通知で届く＝失敗ではない。空振りのまま「実行中」と述べない）。
 
@@ -75,6 +75,8 @@ gh search prs --author=@me --state=open --json url,title,reviewDecision,reposito
 main は返ってきた整形済みリストをそのまま提示し、サマリに件数を出す。
 
 ### 5. 技術記事フィード収集
+
+> **launchd 事前実行チェック**: まず `~/.claude/.collect-feed-last` を Read し、**今日の日付なら朝前の launchd（collect-feed-prep）が収集済み**。feed-collector は起動せず、`~/.claude/collect-feed-report.md` を Read してそのレポートを提示する（headless の main セッションで Workflow 並列巡回が使えるため、対話セッション側は読むだけで済む。サマリには登録件数と「launchd 実行済み」を記す）。スタンプが今日でない場合も、`~/.claude/collect-feed-prep.log` の末尾を Read し、**今日の start があって完了記録が無ければ launchd 収集が進行中**（8:15 開始で 1 時間半ほどかかる）＝feed-collector を起動しない（二重収集の防止）。手順 5 は「launchd 収集中（レポートは完了後に確認）」としてサマリに記す。スタンプもログも今日でない（＝ジョブが落ちた・走らなかった）場合のみ、以下の feed-collector 委譲を実行する。
 
 **feed-collector に委譲**する（config 読み・Notion クエリ・巡回ログで main の文脈を汚さないため）。**朝で最重量の手順なので、手順 3・4 と一緒に冒頭バッチで同時起動する**（survey と重ねて待ち時間を隠す）。feed-collector は `collect-feed:collect-feed` を最後まで回し（古い記事のアーカイブ・Notion 登録・🚨時の Slack 通知・light-inc 横断調査まで）、**Step 10 の収集レポートだけ**を返す。main はそのレポートを提示し、サマリに Notion 登録件数を出す。
 
