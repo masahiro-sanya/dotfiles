@@ -2,7 +2,10 @@
 input=$(cat)
 
 # 必要フィールドを jq 1回でまとめて取り出す（プロセス起動 6回 → 1回）
-IFS=$'\t' read -r MODEL PCT COST DURATION_MS ADDED REMOVED CURRENT_DIR RL5_PCT RL5_RESET RL7_PCT RL7_RESET <<EOF
+# 区切りは US(0x1F)。タブは IFS 空白扱いで連続空フィールドが畳まれ、途中に空フィールド
+# (rate_limits 欠落・effort 非対応)があると後続の値が繰り上がって別変数に流れ込む。
+# 非空白の US 区切りなら空フィールドが位置ごと保持されるので、どの組み合わせでもズレない。
+IFS=$'\037' read -r MODEL PCT COST DURATION_MS ADDED REMOVED CURRENT_DIR RL5_PCT RL5_RESET RL7_PCT RL7_RESET EFFORT <<EOF
 $(printf '%s' "$input" | jq -r '[
   (.model.display_name // "Claude"),
   (.context_window.used_percentage // 0),
@@ -14,8 +17,9 @@ $(printf '%s' "$input" | jq -r '[
   (.rate_limits.five_hour.used_percentage // ""),
   (.rate_limits.five_hour.resets_at // ""),
   (.rate_limits.seven_day.used_percentage // ""),
-  (.rate_limits.seven_day.resets_at // "")
-] | @tsv' 2>/dev/null)
+  (.rate_limits.seven_day.resets_at // ""),
+  (.effort.level // "")
+] | map(tostring) | join("\u001f")' 2>/dev/null)
 EOF
 
 MODEL=${MODEL:-Claude}
@@ -126,7 +130,32 @@ case "${MODEL}" in
   *[Ff]able*) FABLE_WARN="\033[33m⚠ Fable週枠は別集計 · claude.aiで確認${RESET}" ;;
 esac
 
+# --- effort（現在のセッションの effort レベル: statusline JSON の .effort.level）---
+# ライブ値なので /effort の途中変更も即反映。モデルが effort 非対応なら空=非表示の fail-open。
+# バーは rate 制限と同じ █/░(全角ではなくセル幅1で揃う既知グリフ)。▰/▱ は Ambiguous 幅で
+# wezterm だとグリフがセルをはみ出し次の文字に被るため使わない。rate(6マス・危険度=緑黄赤)とは
+# 「effort ラベル＋段階色＋5マス」で区別する。effort 非対応モデルは空=非表示の fail-open。
+EFFORT_SEG=""
+if [ -n "${EFFORT}" ]; then
+  case "${EFFORT}" in
+    low)    ecolor="\033[90m"; efill=1 ;;
+    medium) ecolor="\033[37m"; efill=2 ;;
+    high)   ecolor="\033[36m"; efill=3 ;;
+    xhigh)  ecolor="\033[95m"; efill=4 ;;
+    max)    ecolor="\033[1;95m"; efill=5 ;;
+    *)      ecolor="\033[37m"; efill=0 ;;
+  esac
+  egauge=""
+  ei=1
+  while [ "${ei}" -le 5 ]; do
+    if [ "${ei}" -le "${efill}" ]; then egauge="${egauge}█"; else egauge="${egauge}░"; fi
+    ei=$((ei + 1))
+  done
+  EFFORT_SEG="\033[2meffort${RESET} ${ecolor}${egauge}${RESET} ${ecolor}${EFFORT}${RESET}"
+fi
+
 RL_LINE=""
+[ -n "${EFFORT_SEG}" ] && RL_LINE="${EFFORT_SEG}"
 render_window "5h" "${RL5_PCT}" "${RL5_RESET}" 18000
 render_window "週" "${RL7_PCT}" "${RL7_RESET}" 604800
 [ -n "${FABLE_WARN}" ] && RL_LINE="${RL_LINE}${RL_LINE:+   }${FABLE_WARN}"
