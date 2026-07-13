@@ -26,9 +26,11 @@
 - GCP のログ・監視の調査 → **gcp-log-investigator**（参照専用）
 - palmu API の仕様・実装調査 → **palmu-api-researcher**（read 専用）
 - ビルド/テスト/lint の検証（失敗と原因ポインタだけ返す）→ **verify-runner**（read 専用・ソースは編集しない）
+- 仕様が閉じた実装スライスの実行（実装＋自己検証まで。コミット/push はしない）→ **impl-runner**（Sonnet 固定・書き込み可。枠を食う実装ループを引き受け、main=Opus は設計/監査/レビューに専念）
+- 差分レビューの一次実行（深刻度順の指摘リストを返す。修正・コミットはしない）→ **review-runner**（Sonnet 固定・read 専用。重い読み込みを隔離し、main=Opus は短い指摘リストの裁定とリスク箇所に専念。リスク高は要 Opus エスカレーション）
 - PR レビュー指摘の読み取り・構造化（返信はしない）→ **pr-review-triage**（read 専用。書き込みは fix-pr-reviews / main）
 - 広域なコード探索の fan-out → **Explore**（組み込み）
 - 現在の文脈を引き継いだ独立・並行作業 → **fork**
 - 上のどれにも当てはまらない汎用タスクのみ → general-purpose
 
-実装・コミット・push・レビュー返信・リリース操作など**書き込みを伴う作業は read 専用の調査 agent には投げない**。ただし**独立して仕様が閉じた実装スライス**（例: テーブル追加＋ハンドラ＋テストのような定型）は、`superpowers` の subagent-driven-development / dispatching-parallel-agents の型で書き込み可能な fresh agent に切り出してよい。フル文脈と人間の舵取りが要る実装だけ main に残す。**独立した調査・読み取りは必ず複数 Task を 1 メッセージで同時に投げる（1 本ずつ順番に投げない）。1 本の investigator に多ソースを詰め込むと中で逐次読みになって遅い＝独立ソースは別 Task に割って並列度を上げる**（読みが遅いと感じたら本数を増やす／太い 1 本を割る）。
+実装・コミット・push・レビュー返信・リリース操作など**書き込みを伴う作業は read 専用の調査 agent には投げない**。ただし**独立して仕様が閉じた実装スライス**（例: テーブル追加＋ハンドラ＋テストのような定型）は、`superpowers` の subagent-driven-development / dispatching-parallel-agents の型で書き込み可能な fresh agent に切り出してよい。切り出す先は既定で **impl-runner**（Sonnet 固定）とし、複数ファイルにまたがる長い実装ループは main（Opus）で書き下さず既定で impl-runner に回す。狙いは枠を食う実装を安いモデルに逃がし、main の Opus 枠（特に週間）を設計・監査・レビューに温存すること。週間/5h 枠が厳しいときは特に積極的に切り出す。レビューも同様に、差分の重い読み込みと一次指摘出しは **review-runner**（Sonnet・read 専用）に隔離し、main（Opus）は短い指摘リストの裁定とリスク箇所（要 Opus）に専念してよい。フル文脈と人間の舵取りが要る実装だけ main に残す。**独立した調査・読み取りは必ず複数 Task を 1 メッセージで同時に投げる（1 本ずつ順番に投げない）。1 本の investigator に多ソースを詰め込むと中で逐次読みになって遅い＝独立ソースは別 Task に割って並列度を上げる**（読みが遅いと感じたら本数を増やす／太い 1 本を割る）。
