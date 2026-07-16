@@ -132,6 +132,13 @@ for agent in "$DOTFILES_DIR/claude/agents/"*.md; do
     [ -f "$agent" ] && backup_and_link "$agent" "$HOME/.claude/agents/$(basename "$agent")"
 done
 
+# Claude Code failure catalogs (スタック別の失敗パターンカタログ。agents/CLAUDE.md から参照される)
+echo "--- Claude Code Failure Catalogs ---"
+mkdir -p "$HOME/.claude/failure-catalog"
+for catalog in "$DOTFILES_DIR/claude/failure-catalog/"*.md; do
+    [ -f "$catalog" ] && backup_and_link "$catalog" "$HOME/.claude/failure-catalog/$(basename "$catalog")"
+done
+
 # --- mise ---
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
