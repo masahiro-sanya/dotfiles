@@ -18,6 +18,8 @@ config.window_decorations = "RESIZE"
 config.show_tabs_in_tab_bar = true
 -- タブが一つの時は非表示
 config.hide_tab_bar_if_only_one_tab = true
+-- 既定の 16 だとリポ名が数文字しか残らない（palmu-* は頭が揃うため全滅する）
+config.tab_max_width = 24
 -- falseにするとタブバーの透過が効かなくなる
 -- config.use_fancy_tab_bar = false
 
@@ -127,16 +129,16 @@ local function read_claude_state(pane_id)
   return v
 end
 
--- 状態キー → 表示（アイコン・文言・背景色 active/非active の明暗2段）。サブは総数 n を文言に使う。
+-- 状態キー → 表示（アイコン・背景色 active/非active の明暗2段）。サブは総数 n をアイコンに添える。
 local function status_display(key, n)
   if key == "sub" then
-    return { icon = "⚙", label = "サブ×" .. n, bg = "#6f4a9c", bg_dim = "#43305e" }
+    return { icon = "⚙" .. n, bg = "#6f4a9c", bg_dim = "#43305e" }
   elseif key == "busy" then
-    return { icon = "●", label = "実行中", bg = "#2f6f9f", bg_dim = "#204d6e" }
+    return { icon = "●", bg = "#2f6f9f", bg_dim = "#204d6e" }
   elseif key == "waiting" then
-    return { icon = "⚠", label = "要対応", bg = "#c0562a", bg_dim = "#7f3a1c" }
+    return { icon = "⚠", bg = "#c0562a", bg_dim = "#7f3a1c" }
   elseif key == "idle" then
-    return { icon = "✓", label = "待機中", bg = "#4a7c59", bg_dim = "#33553d" }
+    return { icon = "✓", bg = "#4a7c59", bg_dim = "#33553d" }
   end
   return nil
 end
@@ -206,9 +208,11 @@ wezterm.on("format-tab-title", function(tab, tabs, panes, config, hover, max_wid
     label = active_repo
   end
 
-  -- Claude 稼働状態を先頭に添える（リポ名より前＝truncate されても状態は残す）
+  -- Claude 稼働状態を先頭に添える（リポ名より前＝truncate されても状態は残す）。
+  -- ラベル文字列は載せない: 全角3文字で6セル食い、リポ名の取り分が消える。
+  -- 状態は背景色とアイコンで判別できるので二重表現になっていた。
   if status then
-    label = status.icon .. " " .. status.label .. "  " .. label
+    label = status.icon .. "  " .. label
   end
 
   local title = "   " .. wezterm.truncate_right(label, max_width - 1) .. "   "
