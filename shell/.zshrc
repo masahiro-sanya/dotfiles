@@ -150,6 +150,14 @@ claude() {
   command claude "$@"
 }
 
+# chandoff: いま居る Claude Code セッションを Markdown に書き出して次セッションへ引き継ぐ。
+# セッション内で `!chandoff` として実行すると CLAUDE_CODE_SESSION_ID が渡り、
+# 同一リポで複数タブが走っていても「今いるセッション」を確実に書き出す。
+# 新セッション側は /import-claude-session で読み込む（保存先 ~/claude-sessions/）。
+chandoff() {
+  python3 "$HOME/src/dotfiles/claude/scripts/export-current-session.py" "$@"
+}
+
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
 export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
 export PATH="$HOME/.local/bin:$PATH"
