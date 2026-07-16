@@ -9,6 +9,17 @@
 
 set -u
 
+# git 由来の環境変数を落としてからフィクスチャを作る。
+# .githooks/pre-commit からこのテストが走るとき、git は GIT_DIR / GIT_INDEX_FILE 等を
+# 環境に置く。これらは引数のパスより優先されるため、make_repo の `git init <path>` や
+# `git -C <path> commit` が一時ディレクトリでなく dotfiles リポ本体に着弾する
+# （実際に main へ空コミットが4つ積まれ、feat/test が生え、core.bare=true にされた）。
+# guard 側も PWD でなく GIT_DIR のブランチを見てしまい、branch 判定のテストが誤って落ちる。
+for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+    unset "${_v}"
+done
+unset _v
+
 HOOKS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
 trap 'command rm -rf "${TMP_ROOT}"' EXIT
