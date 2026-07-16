@@ -4,6 +4,8 @@
 #   - grep/find をコマンド位置で検知してブロックし rg/fd へ誘導
 #   - git の --no-verify をブロック（「テストを無効化・スキップしない」）
 #   - main/master への直接 git commit をブロック（「feature branchで作業」）
+#   - 監査ログ（guard-hits / hooks-error / traces）の削除・上書きをブロック
+#   - --dangerously-skip-permissions の実行をブロック（Light ガイドライン）
 # exit 2 + stderr で Claude にブロック理由が差し戻される
 
 set -u
@@ -71,9 +73,33 @@ if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${rm_pos}rm([[:space:]]|$)"; then
     exit 2
 fi
 
+# 監査ログの改変防止（Light ガイドライン「検知の回避をしない・監査ログを正当な理由なく
+# 削除しない」の機械化）。対象: ~/.claude/guard-hits.log（guard 発火テレメトリ）・
+# ~/.claude/hooks-error.log（fail-open 痕跡）・~/.claude/logs/traces/（trace ログ）。
+# 破壊系コマンド（rm/mv/shred/unlink/truncate/tee/dd）が同一パイプライン区切り内で
+# 監査ログパスに触れる、または上書きリダイレクト（> / >|。追記 >> は対象外）が監査ログを
+# 指すときブロックする。読み取り（cat/rg/tail 等）・バックアップコピー（cp）・追記は許可。
+# クォートで包んだパスでも改変はできてしまうため、quote-strip 前の生コマンドで判定する。
+# 検知漏れ許容: sed -i / perl -i 等の in-place 編集や間接実行までは追わない。
+audit_paths='\.claude/(guard-hits\.log|hooks-error\.log|logs/traces)'
+if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}(rm|mv|shred|unlink|truncate|tee|dd)[[:space:]][^|;&]*${audit_paths}" \
+    || printf '%s\n' "${cmd}" | /usr/bin/grep -qE "(^|[^>])>[|]?[[:space:]]*[^[:space:]>]*${audit_paths}"; then
+    log_block "audit-log-tamper-blocked" "${cmd}"
+    echo "監査ログ（~/.claude/guard-hits.log・hooks-error.log・logs/traces/）の削除・移動・上書きはしない（Light AI利用ガイドライン: 監査ログを正当な理由なく削除しない）。読み取りと追記（>>）は可能。整理が必要ならユーザーが手動で行ってください。" >&2
+    exit 2
+fi
+
 # --no-verify / git commit 検知はクォート内（コミットメッセージ等のデータ）を
 # 除去してから判定する（メッセージ本文に書いただけで誤爆しないように）
 cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs; s/'[^']*'//gs" 2>/dev/null || printf '%s' "${cmd}")"
+
+# 権限確認の一括スキップ禁止（Light ガイドライン第3条の機械化）。
+# クォート内の言及（ドキュメント・メッセージ）は cmd_stripped で除去済みのため誤爆しない。
+if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -q -- '--dangerously-skip-permissions'; then
+    log_block "dangerously-skip-blocked" "${cmd_stripped}"
+    echo "--dangerously-skip-permissions は実行しない・提案しない（Light AI利用ガイドライン: 権限確認の一括スキップ禁止）。権限が要る操作は通常の許可フローで進めてください。" >&2
+    exit 2
+fi
 
 if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}git[[:space:]][^|;&]*[[:space:]]--no-verify"; then
     log_block "no-verify-blocked" "${cmd_stripped}"

@@ -1,6 +1,7 @@
 #!/bin/bash
 # dotfiles pre-commit: staged ファイルのみを対象にした軽量チェック
 # - claude/settings.json: JSON 妥当性 + ランタイムフィールド（コミット禁止）の検出
+# - 全 staged ファイル: 高確度の秘密パターン検知（AWSキー・GitHub PAT・秘密鍵 等）
 # - *.sh: bash -n（staged 内容で検証）
 # - claude/hooks/*.sh が staged のときだけ hooks 回帰テストを実行
 # 配線: setup.sh が `git config core.hooksPath .githooks` を設定する
@@ -22,6 +23,10 @@ fi
 
 run_hook_tests=0
 
+# 高確度の秘密パターン（形式が確定的なもののみ。誤検知を抑えるため緩いパターンは入れない）
+# AWS アクセスキー / GitHub PAT（新旧）/ Slack token / Anthropic API key / Google API key / PEM 秘密鍵
+secret_pat='AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk-ant-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|-----BEGIN( [A-Z]+)? PRIVATE KEY-----'
+
 while IFS= read -r f; do
     case "${f}" in
         claude/settings.json)
@@ -29,7 +34,7 @@ while IFS= read -r f; do
             if ! printf '%s\n' "${content}" | jq . >/dev/null 2>&1; then
                 err "claude/settings.json が JSON としてパースできません"
             else
-                bad="$(printf '%s\n' "${content}" | jq -r 'keys[] | select(. == "model" or . == "effortLevel" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")')"
+                bad="$(printf '%s\n' "${content}" | jq -r 'keys[] | select(. == "model" or . == "effortLevel" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled" or . == "skipDangerousModePermissionPrompt")')"
                 if [ -n "${bad}" ]; then
                     err "claude/settings.json にランタイムフィールドが含まれています（コミット禁止）: $(printf '%s' "${bad}" | tr '\n' ' ')"
                     err "  除去してから再コミットしてください（例: git restore --staged claude/settings.json して該当キーを削除）"
@@ -37,6 +42,12 @@ while IFS= read -r f; do
             fi
             ;;
     esac
+
+    # 秘密パターン検知（staged 内容全体を対象。このリポに秘密が存在してよい場所はない）
+    if git show ":${f}" 2>/dev/null | /usr/bin/grep -qE "${secret_pat}"; then
+        err "秘密情報らしき文字列を検知: ${f}（AWSキー/GitHub PAT/Slack token/APIキー/秘密鍵の形式）"
+        err "  実物なら即座に取り消し・ローテーションし、キーチェーン等へ移す。誤検知ならユーザー確認の上で対応を決める"
+    fi
 
     case "${f}" in
         *.sh)

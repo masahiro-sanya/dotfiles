@@ -98,7 +98,7 @@ main は返ってきた整形済みリストをそのまま提示し、サマリ
 
 1. `~/.claude/skills/morning/agent-usage.py 7` を実行し、直近7日の Task 委譲を **subagent_type 別に集計** する。
 2. `~/.claude/guard-hits.log`（あれば）を Read し、**reason 別に発火件数を集計** する（無ければ「発火なし」）。
-3. `~/.claude/hooks-error.log`（あれば）を Read し、**直近1週間の fail-open 記録**（どの hook のどのパースが落ちたか）を抽出する（無ければ「fail-open なし」）。
+3. `~/.claude/hooks-error.log`（あれば）を Read し、**直近1週間の fail-open 記録**（どの hook のどのパースが落ちたか）を抽出する（無ければ「fail-open なし」）。`jq parse failed` の行には真因特定用の診断（`bytes=`＝入力バイト数、`jqerr=`＝パースエラー位置）が付いているので、再発があればその値も併せて報告する（入力が途中で切れているのか・壊れた JSON なのかを切り分ける材料になる）。
 
 main は返ってきた要約に **講評・判定を付ける**（この判断は main が持つ）:
 - **委譲の偏り**: **general-purpose に寄りすぎていないか**（例: 「調査・検証は investigator / verify-runner に寄せられたはず」）。自作エージェントへ委譲が移っているかの定点観測。
