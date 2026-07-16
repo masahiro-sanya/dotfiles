@@ -306,7 +306,45 @@ assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s4" "a1"
 assert_state "SubagentStart a2 → sub:2" "sub:2" "SubagentStart" "s4" "a2"
 assert_state "SessionStart で marker 一掃 → idle" "idle" "SessionStart" "s4"
 
-# --- グループ5: SessionEnd は状態ファイルを削除（タブをリポ名だけに戻す）---
+# --- グループ5: ツール発火も busy の起点（UserPromptSubmit の無いターン）---
+# 背景タスクの完了通知で再起動されるターンには UserPromptSubmit が無い。ツール発火を
+# busy に繋がないと、Claude が作業している間ずっと待機中と表示される（実測で再現した回帰）。
+wt_reset
+assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s6"
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s6" "a1"
+assert_state "親 Stop でも sub:1" "sub:1" "Stop" "s6"
+assert_state "最後のサブ終了 → idle" "idle" "SubagentStop" "s6" "a1"
+assert_state "完了通知で再起動→ツール発火で busy（待機中に居座らない）" "busy" "PreToolUse" "s6"
+
+# --- グループ6: 権限プロンプト承認後に waiting が残らない ---
+# Notification(waiting) を戻すのが Stop だけだと、承認して作業を続けている間ずっと
+# 要対応のままになる。承認後に走るツールの PostToolUse で busy に復帰する。
+wt_reset
+assert_state "PreToolUse → busy" "busy" "PreToolUse" "s7"
+assert_state "権限プロンプト → waiting" "waiting" "Notification" "s7"
+assert_state "承認後のツール完了で busy へ復帰（要対応が居座らない）" "busy" "PostToolUse" "s7"
+
+# --- グループ7: サブ稼働中のツール発火は sub:N を壊さない ---
+# PreToolUse は busy を書くが、サブが走っていれば表示は sub:N のままであるべき。
+wt_reset
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s8" "a1"
+assert_state "サブ稼働中の PreToolUse でも sub:1 を維持" "sub:1" "PreToolUse" "s8"
+
+# --- グループ8: 死んだロックを回収する ---
+# hook が timeout で殺されると lock_dir が残り、以降そのペインは毎回スピンし切ってから
+# 続行する（実際に pane-47.lock が 8 日間居座っていた）。古いロックは奪って進む。
+wt_reset
+mkdir -p "${WT_DIR}/pane-${WT_PANE}.lock"
+# 31 分前の mtime にして「死んだロック」を作る（30 秒閾値を確実に超える）
+touch -t "$(date -v-31M +%Y%m%d%H%M 2>/dev/null || date +%Y%m%d%H%M)" "${WT_DIR}/pane-${WT_PANE}.lock" 2>/dev/null
+assert_state "死んだロックがあっても状態を更新できる" "busy" "UserPromptSubmit" "s9"
+if [ ! -d "${WT_DIR}/pane-${WT_PANE}.lock" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 死んだロックを回収して解放する"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 死んだロックが残置された"
+fi
+
+# --- グループ9: SessionEnd は状態ファイルを削除（タブをリポ名だけに戻す）---
 wt_reset
 assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s5"
 assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s5" "a1"
