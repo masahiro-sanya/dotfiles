@@ -1,0 +1,52 @@
+# Claude Code — WebFetch 許可ドメイン（webfetch-guard.sh が参照）
+# host がここに一致（完全一致 or サブドメイン一致）すれば WebFetch を allow、
+# 未知ドメインは ask（確認）に降格する。'#' 始まりと空行は無視。
+# 自分の調査でよく使うドメインは確認プロンプトの案内に従って随時追記する。
+#
+# ⚠️ 任意 URL を代理取得するリレー/プロキシは追加しないこと（exfil の踏み台になる）:
+#    r.jina.ai / web.archive.org / webhook.site / requestbin.com / pastebin.com
+#    / ngrok.io / *.trycloudflare.com / translate.google.com 等
+
+# --- 開発 / ドキュメント / AI ---
+github.com
+githubusercontent.com
+gitlab.com
+anthropic.com
+claude.com
+google.com
+developer.apple.com
+mozilla.org
+stackoverflow.com
+stackexchange.com
+npmjs.com
+pypi.org
+python.org
+rust-lang.org
+go.dev
+microsoft.com
+cloudflare.com
+vercel.com
+nextjs.org
+readthedocs.io
+wikipedia.org
+arxiv.org
+notion.com
+notion.so
+
+# --- 技術ブログ / 勉強会（JP）---
+zenn.dev
+qiita.com
+note.com
+speakerdeck.com
+connpass.com
+
+# --- light-inc 業務でよく参照（各自調整）---
+basemachina.com
+intercom.com
+line.biz
+herp.cloud
+sensortower.com
+tiktok.com
+tencentcloud.com
+trtc.io
+flatt.tech

@@ -2,11 +2,9 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(git push:*)",
       "Bash(make:*)",
       "Bash(moq:*)",
       "Bash(APP_KEY=dummy go test:*)",
-      "Bash(gh pr:*)",
       "Bash(git clone:*)",
       "Bash(git apply)",
       "Bash(claude mcp:*)",
@@ -47,6 +45,36 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/guard-review-push.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/self-app-guard.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/bash-guard.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/credential-guard.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/webfetch-guard.sh",
+            "timeout": 5
           }
         ]
       },
@@ -56,6 +84,43 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/guard-test-skip.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/wezterm-status.sh PreToolUse",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/trace-log.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/wezterm-status.sh PostToolUse",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "WebFetch|WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/mark-external-fetch.sh",
             "timeout": 5
           }
         ]
@@ -167,7 +232,6 @@
     "dev-ticket@light-skills": true,
     "github-analyze-member@light-skills": false,
     "fix-pr-reviews@light-skills": true,
-    "light-skills-updater@light-skills": true,
     "member-report-manager@light-skills": false,
     "gcp-monitoring@light-skills": true,
     "claude-session-manager@light-skills": true,
@@ -177,7 +241,6 @@
     "retrospective-tools@light-skills": true,
     "quarterly-evaluation-generator@light-skills": true,
     "gogcli@light-skills": true,
-    "offboarding-checker@light-skills": false,
     "gcp-prod-guard@light-skills": true,
     "check-release-pr@light-skills": true,
     "gcp-log-tools@light-skills": true,
@@ -191,21 +254,23 @@
     "cmux-handoff@light-skills": true,
     "new-desktop-app@light-skills": false,
     "new-web-app@light-skills": false,
-    "lhs@light-skills": false,
-    "infra-check@light-skills": true,
-    "palmu-ai-dashboard-collector@light-skills": true,
-    "konishi@light-skills": false,
     "create-slides@light-skills": true,
     "create-html@light-skills": true,
-    "collect-feed@light-skills": true,
-    "fukai@light-skills": false,
-    "claude-code-toolkit@light-skills": true,
     "ai-slop-review@light-skills": true,
     "app-security-check@light-skills": true,
-    "check-release-cross-repo@light-skills": true,
     "superpowers@superpowers-marketplace": true,
     "document-skills@anthropic-agent-skills": true,
-    "example-skills@anthropic-agent-skills": false
+    "example-skills@anthropic-agent-skills": false,
+    "fukai@light-skills": true,
+    "konishi@light-skills": true,
+    "light-skills-updater@light-skills": true,
+    "claude-code-toolkit@light-skills": true,
+    "palmu-ai-dashboard-collector@light-skills": true,
+    "infra-check@light-skills": true,
+    "offboarding-checker@light-skills": true,
+    "collect-feed@light-skills": true,
+    "check-release-cross-repo@light-skills": true,
+    "lhs@light-skills": true
   },
   "extraKnownMarketplaces": {
     "light-skills": {
