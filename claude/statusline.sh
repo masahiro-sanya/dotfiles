@@ -5,6 +5,8 @@ input=$(cat)
 # 区切りは US(0x1F)。タブは IFS 空白扱いで連続空フィールドが畳まれ、途中に空フィールド
 # (rate_limits 欠落・effort 非対応)があると後続の値が繰り上がって別変数に流れ込む。
 # 非空白の US 区切りなら空フィールドが位置ごと保持されるので、どの組み合わせでもズレない。
+# 全フィールドを位置合わせで read するが一部は未使用（欠落時のズレ防止が目的・SC2034 は想定内）
+# shellcheck disable=SC2034
 IFS=$'\037' read -r MODEL PCT COST DURATION_MS ADDED REMOVED CURRENT_DIR RL5_PCT RL5_RESET RL7_PCT RL7_RESET EFFORT <<EOF
 $(printf '%s' "$input" | jq -r '[
   (.model.display_name // "Claude"),

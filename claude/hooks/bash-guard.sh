@@ -401,7 +401,10 @@ GITEOF
     GIT_CD=$(printf '%s\n' "$GIT_PARSED" | sed -n '2p')
     GIT_C=$(printf '%s\n' "$GIT_PARSED" | sed -n '3p')
     # ~ 展開（cd 先 / git -C は ~ をリテラル扱いするため）
+    # case パターンの "~" はリテラル一致であり展開を意図していない（SC2088 は誤検知）
+    # shellcheck disable=SC2088
     case "$GIT_CD" in "~"|"~/"*) GIT_CD="${HOME}${GIT_CD#\~}" ;; esac
+    # shellcheck disable=SC2088
     case "$GIT_C" in "~"|"~/"*) GIT_C="${HOME}${GIT_C#\~}" ;; esac
     GIT_REPO_DIR="."
     [ -n "$GIT_CD" ] && GIT_REPO_DIR="$GIT_CD"
