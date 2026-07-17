@@ -130,44 +130,68 @@ local function read_claude_state(pane_id)
 end
 
 -- 状態キー → 表示（アイコン・背景色 active/非active の明暗2段）。サブは総数 n をアイコンに添える。
-local function status_display(key, n)
+-- agent="codex" のときは Codex 専用色（teal/cyan 系）＋ ᶜ バッジで Claude と区別する。
+-- busy は形も変える（Claude ●／Codex ◆）。waiting は「要対応」の緊急オレンジを両者共通に保ち、
+-- バッジ ᶜ だけで Codex と分かるようにする（誰の待ちでも色で緊急度が読める方を優先）。
+local function status_display(key, n, agent)
+  local d
   if key == "sub" then
-    return { icon = "⚙" .. n, bg = "#6f4a9c", bg_dim = "#43305e" }
+    d = { icon = "⚙" .. n, bg = "#6f4a9c", bg_dim = "#43305e" }   -- サブは Claude のみ
   elseif key == "busy" then
-    return { icon = "●", bg = "#2f6f9f", bg_dim = "#204d6e" }
+    d = { icon = "●", bg = "#2f6f9f", bg_dim = "#204d6e" }
   elseif key == "waiting" then
-    return { icon = "⚠", bg = "#c0562a", bg_dim = "#7f3a1c" }
+    d = { icon = "⚠", bg = "#c0562a", bg_dim = "#7f3a1c" }
   elseif key == "idle" then
-    return { icon = "✓", bg = "#4a7c59", bg_dim = "#33553d" }
+    d = { icon = "✓", bg = "#4a7c59", bg_dim = "#33553d" }
+  else
+    return nil
   end
-  return nil
+  if agent == "codex" then
+    d.icon = d.icon .. "ᶜ"                                        -- Codex バッジ
+    if key == "busy" then
+      d.icon = "◆ᶜ"; d.bg = "#1f8a8a"; d.bg_dim = "#155c5c"       -- Codex 稼働は teal
+    elseif key == "idle" then
+      d.bg = "#2f8a7a"; d.bg_dim = "#1c5a4f"                      -- Codex 待機は teal-green
+    end
+    -- waiting は色そのまま（緊急オレンジ）、アイコンは ⚠ᶜ
+  end
+  return d
 end
 
--- タブ内の全ペインの Claude 状態を緊急度で集約する。分割で複数セッションを回しても、
+-- タブ内の全ペインの Claude/Codex 状態を緊急度で集約する。分割で複数セッションを回しても、
 -- 一番注意が要るものをタブに出す。優先度: 要対応 > サブ稼働(総数合算) > 実行中 > 待機中。
--- どのペインにも状態が無ければ nil（タブはリポ名だけ）。
+-- 同順位に Claude と Codex が混在するときは Codex を優先して見せる（新しく足した Codex を
+-- 埋もれさせない）。どのペインにも状態が無ければ nil（タブはリポ名だけ）。
+-- 状態ファイルの中身は "codex:busy" のように任意の "<agent>:" プレフィックス付き（無印は claude）。
 local function claude_tab_status(panes)
-  local any_waiting, any_busy, any_idle = false, false, false
+  local wait_agent, busy_agent, idle_agent = nil, nil, nil
   local sub_total = 0
   for _, p in ipairs(panes) do
     local v = read_claude_state(p.pane_id)
     if v and v ~= "" then
+      -- 省略可能な agent プレフィックス。codex:/claude: だけ剥がす（sub:N は剥がさない）。
+      local agent = "claude"
+      local a, rest = v:match("^(%a+):(.+)$")
+      if a == "codex" or a == "claude" then
+        agent = a
+        v = rest
+      end
       local n = v:match("^sub:(%d+)$")
       if n then
-        sub_total = sub_total + tonumber(n)
+        sub_total = sub_total + tonumber(n)                       -- サブは Claude のみ付与される
       elseif v == "waiting" then
-        any_waiting = true
+        if wait_agent == nil or agent == "codex" then wait_agent = agent end
       elseif v == "busy" then
-        any_busy = true
+        if busy_agent == nil or agent == "codex" then busy_agent = agent end
       elseif v == "idle" then
-        any_idle = true
+        if idle_agent == nil or agent == "codex" then idle_agent = agent end
       end
     end
   end
-  if any_waiting then return status_display("waiting") end
-  if sub_total > 0 then return status_display("sub", sub_total) end
-  if any_busy then return status_display("busy") end
-  if any_idle then return status_display("idle") end
+  if wait_agent then return status_display("waiting", nil, wait_agent) end
+  if sub_total > 0 then return status_display("sub", sub_total, "claude") end
+  if busy_agent then return status_display("busy", nil, busy_agent) end
+  if idle_agent then return status_display("idle", nil, idle_agent) end
   return nil
 end
 

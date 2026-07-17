@@ -139,6 +139,12 @@ for catalog in "$DOTFILES_DIR/claude/failure-catalog/"*.md; do
     [ -f "$catalog" ] && backup_and_link "$catalog" "$HOME/.claude/failure-catalog/$(basename "$catalog")"
 done
 
+# --- Codex CLI (hooks: WezTerm タブに Codex の稼働状態を出す) ---
+# Codex は Claude と同じ wezterm-status.sh を WEZTERM_STATUS_AGENT=codex で呼ぶ。
+# 反映には Codex 側で `/hooks` から trust し直す必要がある（Codex はハッシュ trust）。
+echo "--- Codex ---"
+backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
+
 # --- mise ---
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
