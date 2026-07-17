@@ -73,6 +73,16 @@ EOF
   [ -z "${event}" ] && event="${_ev}"
 fi
 
+# 表示するエージェント種別（既定 claude）。Codex から呼ぶときは WEZTERM_STATUS_AGENT=codex を渡す。
+# 表示ファイルの中身に "codex:" を前置し、wezterm.lua 側で色・バッジを分ける。claude は
+# 後方互換のため無印のまま（既存の状態ファイル・テストを壊さない）。Claude と Codex は同一
+# ペインで同時には走らない（1 ペイン=1 前面プロセス）ので main-/marker のファイル名は共有でよい。
+agent="${WEZTERM_STATUS_AGENT:-claude}"
+case "${agent}" in
+  claude|codex) ;;
+  *) agent="claude" ;;
+esac
+
 state_dir="${WEZTERM_STATE_DIR:-${HOME}/.claude/wezterm-state}"
 mkdir -p "${state_dir}" 2>/dev/null
 
@@ -139,8 +149,8 @@ case "${event}" in
     # が busy に入らず、作業中ずっと待機中と表示される。また権限プロンプトを承認したあとも
     # waiting が Stop まで残る。どちらもツール発火を busy に繋ぐことで解ける。
     write_main "busy" ;;
-  Notification)
-    write_main "waiting" ;;
+  Notification|PermissionRequest)
+    write_main "waiting" ;;                              # Codex は権限プロンプトを PermissionRequest で通知する
   Stop|StopFailure)
     write_main "idle" ;;                                # marker は消さない（背景 agent を生かす）
   SessionStart)
@@ -171,6 +181,8 @@ else
   else
     display="${main}"
   fi
+  # Codex は "codex:" を前置して wezterm.lua 側で専用色・バッジに分ける（claude は無印）。
+  [ "${agent}" = "codex" ] && display="codex:${display}"
   # temp+mv で原子的に差し替え（wezterm 側が書き込み途中を読まないように）
   tmp="${state_file}.$$"
   if printf '%s' "${display}" > "${tmp}" 2>/dev/null; then

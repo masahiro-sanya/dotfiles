@@ -350,6 +350,36 @@ assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s5"
 assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s5" "a1"
 assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "SessionEnd" "s5"
 
+# --- グループ10: Codex 用エージェントタグ（WEZTERM_STATUS_AGENT=codex）---
+# Codex から呼ぶと表示ファイルに "codex:" が前置され、wezterm.lua 側で専用色・バッジに分かれる。
+# claude 既定は無印のまま（上のグループ群が後方互換を担保）。Codex は busy/idle/waiting のみ。
+run_wt_codex() {
+    printf '%s' "$(wt_json "$1" "$2" "$3")" | \
+        WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" WEZTERM_STATUS_AGENT="codex" \
+        bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+}
+assert_state_codex() {
+    desc="$1"; want="$2"; ev="$3"; sess="$4"; aid="${5:-}"
+    run_wt_codex "${ev}" "${sess}" "${aid}"
+    got="$(wt_read)"
+    if [ "${got}" = "${want}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（expected='${want}', got='${got}'）"
+    fi
+}
+wt_reset
+assert_state_codex "UserPromptSubmit → codex:busy" "codex:busy" "UserPromptSubmit" "c1"
+assert_state_codex "PermissionRequest → codex:waiting（権限待ち）" "codex:waiting" "PermissionRequest" "c1"
+assert_state_codex "Stop → codex:idle" "codex:idle" "Stop" "c1"
+assert_state_codex "SessionStart → codex:idle" "codex:idle" "SessionStart" "c1"
+assert_state_codex "PreToolUse → codex:busy" "codex:busy" "PreToolUse" "c1"
+assert_state_codex "busy 中の PostToolUse でも codex:busy（早期抜けで表示維持）" "codex:busy" "PostToolUse" "c1"
+
+# claude 既定（WEZTERM_STATUS_AGENT なし）は無印のまま＝codex タグが漏れない
+wt_reset
+assert_state "claude 既定は無印 busy（codex タグが漏れない）" "busy" "UserPromptSubmit" "c2"
+
 # 非 WezTerm（WEZTERM_PANE 空）では状態ファイルを作らない・exit 0
 command rm -f "${WT_STATE_FILE}"
 printf '%s' "$(wt_json "UserPromptSubmit" "s1")" | \
