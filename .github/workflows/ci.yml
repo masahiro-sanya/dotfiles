@@ -11,14 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate JSON (settings / keybindings)
+      - name: Validate JSON (settings / keybindings / codex hooks)
         run: |
           jq . claude/settings.json > /dev/null
           jq . claude/keybindings.json > /dev/null
+          jq . codex/hooks.json > /dev/null
 
       - name: Forbid runtime fields in settings.json
         run: |
-          bad="$(jq -r 'keys[] | select(. == "model" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")' claude/settings.json)"
+          bad="$(jq -r 'keys[] | select(. == "model" or . == "effortLevel" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")' claude/settings.json)"
           if [ -n "$bad" ]; then
             echo "runtime fields must not be committed: $bad" >&2
             exit 1
