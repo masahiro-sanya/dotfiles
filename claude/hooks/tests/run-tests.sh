@@ -353,7 +353,7 @@ assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "Se
 # 非 WezTerm（WEZTERM_PANE 空）では状態ファイルを作らない・exit 0
 command rm -f "${WT_STATE_FILE}"
 printf '%s' "$(wt_json "UserPromptSubmit" "s1")" | \
-    WEZTERM_PANE= WEZTERM_STATE_DIR="${WT_DIR}" \
+    WEZTERM_PANE='' WEZTERM_STATE_DIR="${WT_DIR}" \
     bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
 wt_ec=$?
 if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then
