@@ -125,7 +125,9 @@ esac
 # 生きたロックの保持は一瞬なので、30 秒以上古いものは死んだプロセスのものとみなして奪う。
 if [ -d "${lock_dir}" ]; then
   _now="$(date +%s 2>/dev/null)"
-  _lockts="$(stat -f %m "${lock_dir}" 2>/dev/null)"
+  # mtime 取得は OS 差を吸収する: GNU(Linux/CI) は stat -c %Y、BSD(macOS) は stat -f %m。
+  # 非対応側は unknown option で非0終了するので || で両対応（片方だけ成功して片方は空）。
+  _lockts="$(stat -c %Y "${lock_dir}" 2>/dev/null || stat -f %m "${lock_dir}" 2>/dev/null)"
   if [ -n "${_now}" ] && [ -n "${_lockts}" ] && [ "$((_now - _lockts))" -gt 30 ]; then
     rmdir "${lock_dir}" 2>/dev/null && log_err "stale lock reclaimed: ${lock_dir}"
   fi
