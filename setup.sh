@@ -2,7 +2,9 @@
 set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKUP_DIR="$DOTFILES_DIR/backup/$(date +%Y%m%d_%H%M%S)"
+# バックアップはリポ外に置く（.npmrc 等の認証情報が Git 追跡下に紛れ込むのと、
+# basename 衝突で settings.json 同士が上書きし合うのを避けるため。元のパス構造を保持する）
+BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/backups/$(date +%Y%m%d_%H%M%S)"
 
 # Colors
 GREEN='\033[0;32m'
@@ -29,11 +31,13 @@ backup_and_link() {
         return
     fi
 
-    # Backup existing file/dir
+    # Backup existing file/dir（$HOME からの相対パス構造を保持し、同名 basename の衝突を防ぐ）
     if [ -e "$dest" ] || [ -L "$dest" ]; then
-        mkdir -p "$BACKUP_DIR"
-        mv "$dest" "$BACKUP_DIR/$(basename "$dest")"
-        warn "Backed up: $dest -> $BACKUP_DIR/$(basename "$dest")"
+        local rel="${dest#"$HOME"/}"
+        local backup_target="$BACKUP_DIR/$rel"
+        mkdir -p "$(dirname "$backup_target")"
+        mv "$dest" "$backup_target"
+        warn "Backed up: $dest -> $backup_target"
     fi
 
     # Create parent directory if needed
@@ -144,6 +148,8 @@ done
 # 反映には Codex 側で `/hooks` から trust し直す必要がある（Codex はハッシュ trust）。
 echo "--- Codex ---"
 backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
+# Codex は CLAUDE.md を読まないため、両エージェント共通の運用ルールは AGENTS.md で渡す
+backup_and_link "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 
 # --- mise ---
 echo "--- mise ---"
