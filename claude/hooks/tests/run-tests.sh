@@ -335,8 +335,10 @@ assert_state "サブ稼働中の PreToolUse でも sub:1 を維持" "sub:1" "Pre
 # 続行する（実際に pane-47.lock が 8 日間居座っていた）。古いロックは奪って進む。
 wt_reset
 mkdir -p "${WT_DIR}/pane-${WT_PANE}.lock"
-# 31 分前の mtime にして「死んだロック」を作る（30 秒閾値を確実に超える）
-touch -t "$(date -v-31M +%Y%m%d%H%M 2>/dev/null || date +%Y%m%d%H%M)" "${WT_DIR}/pane-${WT_PANE}.lock" 2>/dev/null
+# 31 分前の mtime にして「死んだロック」を作る（30 秒閾値を確実に超える）。
+# 「31分前」の算出は OS 差を吸収: BSD(macOS) は date -v-31M、GNU(Linux/CI) は date -d。
+# どちらも失敗したときだけ現在時刻（この場合テストは意味を成さないが最後の保険）。
+touch -t "$(date -v-31M +%Y%m%d%H%M 2>/dev/null || date -d '31 minutes ago' +%Y%m%d%H%M 2>/dev/null || date +%Y%m%d%H%M)" "${WT_DIR}/pane-${WT_PANE}.lock" 2>/dev/null
 assert_state "死んだロックがあっても状態を更新できる" "busy" "UserPromptSubmit" "s9"
 if [ ! -d "${WT_DIR}/pane-${WT_PANE}.lock" ]; then
     PASS=$((PASS + 1)); echo "  ok: 死んだロックを回収して解放する"
