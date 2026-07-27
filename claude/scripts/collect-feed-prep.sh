@@ -19,6 +19,11 @@
 #   走るため、これが無いと Workflow 完了前に強制終了される（2026-07-11 実測）
 # - 書き込みは --allowedTools で Tech Feed 系 Notion ツールと Slack 送信だけに限定
 #   （それ以外は permission 自動拒否に倒す。guard hooks は headless でも有効）
+# - 一過性の失敗はリトライする（2026-07-27 追加）: 7/20・7/23 は
+#   "API Error: Connection closed mid-response"、7/24 は Execution error で落ちており、
+#   いずれも 1 回きりの実行だったため収集ごと落ちた。接続断は再実行で救えるので試行を繰り返す
+# - 全試行が失敗したら macOS の通知を出す（2026-07-27 追加）: 従来はログに残るだけで、
+#   /morning を回すまで失敗に気づけなかった（実際 7/22 の成功以降 5 日間気づかず止まっていた）
 # - macOS 標準 bash 3.2 互換で書く
 
 set -u
@@ -27,11 +32,22 @@ LOG_FILE="${HOME}/.claude/collect-feed-prep.log"
 STAMP_FILE="${HOME}/.claude/.collect-feed-last"
 REPORT_FILE="${HOME}/.claude/collect-feed-report.md"
 
+# 何回試すか と、n 回目の失敗後に待つ秒数（スペース区切り・MAX_ATTEMPTS-1 個必要）
+MAX_ATTEMPTS=3
+RETRY_WAIT_SECONDS="60 180"
+
 # launchd から起動されると brew / claude が PATH に無いため明示的に通す
 export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
 
 log() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "${LOG_FILE}"
+}
+
+# ログだけだと /morning を回すまで失敗に気づけないので通知センターにも出す。
+# LaunchAgent はユーザーの GUI セッションで走るので osascript が届く。
+# 通知が出せない環境でもジョブ自体は落とさない（|| true）。
+notify_failure() {
+    osascript -e "display notification \"$1\" with title \"collect-feed-prep 失敗\"" >/dev/null 2>&1 || true
 }
 
 mkdir -p "${HOME}/.claude"
@@ -55,17 +71,41 @@ prompt='技術記事フィード収集を実行して: Skill ツールで collec
 
 allowed_tools='Read,Glob,Grep,Write,WebFetch,WebSearch,Skill,Workflow,Task,TodoWrite,Bash(date:*),mcp__notion__notion-search,mcp__notion__notion-fetch,mcp__notion__notion-create-pages,mcp__notion__notion-update-page,mcp__notion__notion-query-database-view,mcp__notion__notion-query-data-sources,mcp__plugin_slack_slack__slack_read_channel,mcp__plugin_slack_slack__slack_search_public,mcp__plugin_slack_slack__slack_send_message'
 
-if printf '%s' "${prompt}" | CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p --model sonnet --allowedTools "${allowed_tools}" >> "${LOG_FILE}" 2>&1; then
-    # 成功判定は返り値でなく実物で裏取り: レポートが今日書かれているか（mtime）
-    report_day="$(stat -f '%Sm' -t '%Y-%m-%d' "${REPORT_FILE}" 2>/dev/null)"
-    if [ "${report_day}" = "${today}" ]; then
-        printf '%s\n' "${today}" > "${STAMP_FILE}"
-        log "collect-feed-prep: OK (レポート更新・スタンプ記録)"
-    else
-        log "collect-feed-prep: FAILED (claude は exit 0 だがレポート未更新。スタンプは書かない)"
+# 1 回分の収集。成功なら 0、失敗なら last_reason に理由を入れて 1 を返す
+last_reason=""
+run_once() {
+    if printf '%s' "${prompt}" | CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p --model sonnet --allowedTools "${allowed_tools}" >> "${LOG_FILE}" 2>&1; then
+        # 成功判定は返り値でなく実物で裏取り: レポートが今日書かれているか（mtime）
+        report_day="$(stat -f '%Sm' -t '%Y-%m-%d' "${REPORT_FILE}" 2>/dev/null)"
+        if [ "${report_day}" = "${today}" ]; then
+            return 0
+        fi
+        last_reason="claude は exit 0 だがレポート未更新"
+        return 1
     fi
-else
-    log "collect-feed-prep: FAILED (claude exit != 0。スタンプは書かない → /morning は feed-collector に縮退)"
-fi
+    last_reason="claude exit != 0"
+    return 1
+}
+
+attempt=1
+while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
+    log "collect-feed-prep: attempt ${attempt}/${MAX_ATTEMPTS}"
+    if run_once; then
+        printf '%s\n' "${today}" > "${STAMP_FILE}"
+        log "collect-feed-prep: OK (レポート更新・スタンプ記録 / attempt ${attempt})"
+        log "=== collect-feed-prep done ==="
+        exit 0
+    fi
+    log "collect-feed-prep: attempt ${attempt} FAILED (${last_reason})"
+    if [ "${attempt}" -lt "${MAX_ATTEMPTS}" ]; then
+        wait_seconds="$(printf '%s' "${RETRY_WAIT_SECONDS}" | cut -d' ' -f"${attempt}")"
+        log "collect-feed-prep: ${wait_seconds} 秒待って再試行する"
+        sleep "${wait_seconds}"
+    fi
+    attempt=$((attempt + 1))
+done
+
+log "collect-feed-prep: FAILED (${MAX_ATTEMPTS} 回試行して全滅: ${last_reason}。スタンプは書かない → /morning は feed-collector に縮退)"
+notify_failure "${MAX_ATTEMPTS} 回試行して全滅（最後の理由: ${last_reason}）。フィードは未収集のまま。"
 
 log "=== collect-feed-prep done ==="
