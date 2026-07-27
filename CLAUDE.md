@@ -15,6 +15,11 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 - macOS 標準の bash 3.2 互換で書く。変数展開は `${var}` 形式に統一（bash 3.2 は `$var` 直後の全角文字で変数名解釈が壊れる）
 - fail-open 設計: 入力異常では exit 0 で許可に倒す。ただし `~/.claude/hooks-error.log` に痕跡を残す
 
+## git worktree
+
+- worktree を使うのはマージ・cherry-pick 等の git 操作に限る。`$HOME` 配下の symlink は主チェックアウトの絶対パスを指すため、**worktree 側でファイルを編集してもライブ環境には反映されない**
+- worktree はこのリポの中に作らない（`setup.sh` の symlink 対象や未追跡ファイルと混ざる）。用が済んだら `git worktree remove <path>` → `git worktree prune` → `git worktree list` で消えたことを確認する
+
 ## シェル操作の注意
 
 - この環境の `rm` は `-i` エイリアス。非対話実行では削除されないまま exit 0 になるため **`command rm -f` を使い、削除後に ls で裏取りする**
