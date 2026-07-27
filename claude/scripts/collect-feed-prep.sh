@@ -24,6 +24,10 @@
 #   いずれも 1 回きりの実行だったため収集ごと落ちた。接続断は再実行で救えるので試行を繰り返す
 # - 全試行が失敗したら macOS の通知を出す（2026-07-27 追加）: 従来はログに残るだけで、
 #   /morning を回すまで失敗に気づけなかった（実際 7/22 の成功以降 5 日間気づかず止まっていた）
+# - 走る前に Notion MCP の接続を確かめる（2026-07-27 追加）: 7/27 は Notion MCP が
+#   未接続で収集できなかった。再認証は対話でしかできない（headless では
+#   自己復旧できない）ので、未接続と分かった時点でリトライを空振りさせずに
+#   打ち切り、再認証が要る旨を通知する
 # - macOS 標準 bash 3.2 互換で書く
 
 set -u
@@ -35,6 +39,11 @@ REPORT_FILE="${HOME}/.claude/collect-feed-report.md"
 # 何回試すか と、n 回目の失敗後に待つ秒数（スペース区切り・MAX_ATTEMPTS-1 個必要）
 MAX_ATTEMPTS=3
 RETRY_WAIT_SECONDS="60 180"
+
+# 収集に必須の MCP サーバー（`claude mcp list` の行頭の名前）と、健全性チェックの上限秒数。
+# 実測では数秒で返るので、待たされたら早めに打ち切ってよい（判定不能でも収集は止めない）
+REQUIRED_MCP="notion"
+MCP_CHECK_TIMEOUT=60
 
 # launchd から起動されると brew / claude が PATH に無いため明示的に通す
 export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
@@ -48,6 +57,62 @@ log() {
 # 通知が出せない環境でもジョブ自体は落とさない（|| true）。
 notify_failure() {
     osascript -e "display notification \"$1\" with title \"collect-feed-prep 失敗\"" >/dev/null 2>&1 || true
+}
+
+# macOS には timeout(1) が無いので、バックグラウンド実行＋見張りプロセスで打ち切る。
+# 打ち切った場合は kill された分の終了コード（128+9）が返る。
+run_with_timeout() {
+    local seconds cmd_pid killer_pid rc
+    seconds="$1"
+    shift
+    "$@" &
+    cmd_pid=$!
+    ( sleep "${seconds}"; kill -9 "${cmd_pid}" 2>/dev/null ) >/dev/null 2>&1 &
+    killer_pid=$!
+    wait "${cmd_pid}"
+    rc=$?
+    # 見張りを止める（中の sleep は残りうるが、最大 ${seconds} 秒で自然に消える）
+    kill "${killer_pid}" 2>/dev/null
+    return ${rc}
+}
+
+# `claude mcp list` の出力から ${REQUIRED_MCP} の行を探して接続状態を判定する。
+# 返り値: 0=接続OK / 1=未接続（＝再認証が必要で headless では復旧できない） / 2=判定不能
+mcp_precheck() {
+    local check_out result line
+    check_out="${TMPDIR:-/tmp}/collect-feed-prep-mcp.$$"
+    run_with_timeout "${MCP_CHECK_TIMEOUT}" claude mcp list > "${check_out}" 2>&1
+
+    result=2
+    # `|| [ -n "${line}" ]` は、打ち切りで最終行に改行が無くてもその行を読むため
+    while IFS= read -r line || [ -n "${line}" ]; do
+        case "${line}" in
+            "${REQUIRED_MCP}:"*)
+                case "${line}" in
+                    *"Failed to connect"*) result=1 ;;
+                    *Connected*)           result=0 ;;
+                    # 出力書式が変わった時に「未接続」と誤断定しないよう判定不能に倒す
+                    *)                     result=2 ;;
+                esac
+                break
+                ;;
+        esac
+    done < "${check_out}"
+
+    # 接続OK以外は原因の一次証拠になるので生出力をログへ残す（この機能自体、
+    # 7/27 に手で `claude mcp list` を叩くまで原因が分からなかった経緯から来ている）
+    if [ "${result}" -ne 0 ]; then
+        log "collect-feed-prep: claude mcp list の出力 ↓"
+        cat "${check_out}" >> "${LOG_FILE}"
+        # 出力末尾に改行が無いと次のログ行と繋がるので補う（$() は末尾改行を落とすので、
+        # 中身が空＝最後の1バイトが改行だったときは何も足さない）
+        if [ -n "$(tail -c1 "${check_out}")" ]; then
+            printf '\n' >> "${LOG_FILE}"
+        fi
+    fi
+
+    rm -f "${check_out}"
+    return ${result}
 }
 
 mkdir -p "${HOME}/.claude"
@@ -66,6 +131,20 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 log "=== collect-feed-prep start ==="
+
+# Notion MCP が未接続だと収集は必ず失敗する。再認証は対話（/mcp）でしかできないため
+# リトライしても復旧しない ＝ 3 回空振りさせず、ここで打ち切って再認証を促す。
+# 判定できなかったときは収集を止めない（fail-open。従来どおりリトライ＋失敗通知で拾う）。
+mcp_precheck
+mcp_status=$?
+if [ "${mcp_status}" -eq 1 ]; then
+    log "collect-feed-prep: ABORT (${REQUIRED_MCP} MCP が未接続。claude /mcp で再認証が必要。スタンプは書かない → /morning は feed-collector に縮退)"
+    notify_failure "${REQUIRED_MCP} MCP が未接続のため収集を中止した。Claude Code で /mcp を開いて再認証してほしい。"
+    log "=== collect-feed-prep done ==="
+    exit 0
+elif [ "${mcp_status}" -eq 2 ]; then
+    log "collect-feed-prep: WARN (${REQUIRED_MCP} MCP の接続状態を判定できなかった。収集はそのまま試す)"
+fi
 
 prompt='技術記事フィード収集を実行して: Skill ツールで collect-feed:collect-feed を引数なしで起動し、フローを最後まで完遂する（設定読み込み→古い記事のアーカイブ→ソース巡回→重複除外→フィルタ→評価・分類→Notion登録→🚨確認必須記事がある時のみ #dev-times 通知→light-inc 横断調査→結果報告）。ここは main セッションなので Step 4 の Workflow 並列巡回がそのまま使える。スキルの規約（公開日検証をスキップしない・上限ルール・個人名を出さない・palmu/チーム視点）を厳守する。🚨該当が1件も無ければ Slack には何も投稿しない。完了したら (1) Step 10 の収集レポート全文を ~/.claude/collect-feed-report.md に Write で保存し（冒頭に実行日 '"${today}"' を記す）、(2) 最終出力にレポート要約と、permission 拒否やツール不可など実行できなかった部分があれば正直に明記する。登録していないものを登録したと言わない。'
 
