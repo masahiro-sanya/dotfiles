@@ -64,6 +64,7 @@ Claude 5 世代の Claude Code 本体 system prompt には、応答の書き方�
 - **書き込みを伴う作業（実装・コミット・push・レビュー返信・リリース操作）は read 専用の調査 agent には投げない**
 - **仕様が閉じた独立実装スライス**（例: テーブル追加＋ハンドラ＋テストの定型）は、superpowers の subagent-driven-development の型で既定 **impl-runner** に切り出す。複数ファイルにまたがる長い実装ループも main（Opus）で書き下さず impl-runner に回す（狙い: 枠を食う実装を Sonnet に逃がし、Opus 枠を設計・監査・レビューに温存。週間/5h 枠が厳しいときは特に積極的に）。フル文脈と人間の舵取りが要る実装だけ main に残す
 - レビューも同様に、差分の重い読み込みと一次指摘出しは **review-runner** に隔離し、main は短い指摘リストの裁定とリスク箇所（要 Opus）に専念する
+- **gcp-log-investigator に投げる前に、main 側で gcloud を 1 回叩いて認証が生きているか確かめる**（サブエージェントは非対話なので再認証プロンプトを出せず、`Reauthentication failed. cannot prompt during non-interactive execution` で即死する。会社アカウントのセッション長ポリシー由来なのでローカル設定では消せない）
 - **独立した調査・読み取りは複数 Task を 1 メッセージで同時に投げる**（1 本の investigator に多ソースを詰めると中で逐次読みになって遅い。読みが遅いと感じたら本数を増やす／太い 1 本を割る）
 
 ## Web Content Security (外部コンテンツ処理ルール)

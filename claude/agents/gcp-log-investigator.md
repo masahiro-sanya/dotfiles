@@ -19,6 +19,9 @@ model: sonnet
 - まず対象（プロジェクト・サービス・時間帯・severity）を確認し、`gcloud logging read` のフィルタを絞って読む。
 - エラー率・レイテンシ・リソースは Monitoring のメトリクスで裏取りする。
 - 該当が広すぎるときは時間窓や resource.type で段階的に絞る。
+- **まず該当 1 件の詳細を見る。頻度・傾向はその後。** Cloud Run job の成否のような集計は `gcloud run jobs executions list --format='table(name,succeededCount,failedCount,completionTime)'` のような集計ビューで取る。原因は該当 execution の ERROR エントリ 1 件に入っていることが多い。
+- **`gcloud logging read` の `--limit` は既定 50・最大 200。** それ以上が要ると感じたら件数を増やすのではなく、時間窓・resource・severity で絞り、`--format` で必要フィールドだけに落とす。
+- **出力が大きすぎてファイルに退避されたら、その退避ファイルを読み進めない。クエリを絞り直す。**（2026-07-27: 毎分実行のジョブに `--limit=2000` を 4 回投げて計 3 万行を退避させ、28 分かけて成果ゼロで打ち切った）
 
 ## 返し方
 
