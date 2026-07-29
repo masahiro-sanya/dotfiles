@@ -1,0 +1,19 @@
+# Claude Code — gh コマンドの信頼 organization 一覧
+# このファイルにリストされた org 配下のリポジトリに対する gh コマンドは、
+# bash-guard.sh の Phase 1.5 で確認プロンプトをスキップして自動許可されます。
+#
+# 書式: 1行1 organization 名（大文字小文字は区別しない）
+# '#' で始まる行と空行は無視されます。
+#
+# 判定対象:
+#   1. `gh ... --repo OWNER/REPO` 引数の OWNER 部分
+#   2. (--repo 未指定時) cwd の `git remote get-url origin` から抽出した OWNER 部分
+#
+# org に属さないリポジトリ（他社・他人）への gh 操作は本ファイルでは許可されず、
+# 従来の確認プロンプトが出る。
+#
+# 個人 GitHub アカウントや他の org を信頼したい場合は、このファイルに1行追記する
+# （例: エンジニアが個人リポへの gh 操作を確認なしにしたいケース）。
+
+light-inc
+light-inc-sub

@@ -6,7 +6,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 
 ## claude/settings.json
 
-- `model` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**（diff に混入していたら除去してからコミット）
+- `model` / `effortLevel` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**（diff に混入していたら除去してからコミット）
 - コミット前に `jq . claude/settings.json` で JSON 妥当性を確認する
 
 ## claude/hooks/
@@ -14,6 +14,11 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 - 変更したら必ず `bash -n <script>` と `bash claude/hooks/tests/run-tests.sh` を実行する
 - macOS 標準の bash 3.2 互換で書く。変数展開は `${var}` 形式に統一（bash 3.2 は `$var` 直後の全角文字で変数名解釈が壊れる）
 - fail-open 設計: 入力異常では exit 0 で許可に倒す。ただし `~/.claude/hooks-error.log` に痕跡を残す
+
+## git worktree
+
+- worktree を使うのはマージ・cherry-pick 等の git 操作に限る。`$HOME` 配下の symlink は主チェックアウトの絶対パスを指すため、**worktree 側でファイルを編集してもライブ環境には反映されない**
+- worktree はこのリポの中に作らない（`setup.sh` の symlink 対象や未追跡ファイルと混ざる）。用が済んだら `git worktree remove <path>` → `git worktree prune` → `git worktree list` で消えたことを確認する
 
 ## シェル操作の注意
 

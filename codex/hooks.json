@@ -1,0 +1,46 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh SessionStart", "timeout": 5 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh UserPromptSubmit", "timeout": 5 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh PreToolUse", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh PostToolUse", "timeout": 5 }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh PermissionRequest", "timeout": 5 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh Stop", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

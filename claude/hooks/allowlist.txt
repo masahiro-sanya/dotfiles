@@ -1,0 +1,11 @@
+# Claude Code Bash Hook — 許可リスト (allowlist)
+# ここに記載されたパターン（grep -E 正規表現）にマッチするコマンドは
+# セキュリティチェック（exfil-guard, プロンプト評価）をスキップして即許可されます。
+#
+# 書式: 1行1パターン（grep -E の正規表現）
+# '#' で始まる行と空行は無視されます。
+#
+# 例:
+# ^ls\s+                          — ls コマンド全般
+# gws-(work|personal|sidebiz)     — Google Workspace ディレクトリへのアクセス
+# ^brew\s+(install|update|list)   — Homebrew 操作

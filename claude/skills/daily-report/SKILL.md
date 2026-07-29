@@ -1,7 +1,7 @@
 ---
 name: daily-report
-description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）を踏まえて「今日のタスクと目標」を宣言、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "評価チェック", "評価軸レビュー".
-allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), Bash(fd *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
+description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）を踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
+allowed-tools: Task, Bash(gh search prs *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
 ---
 
 # 日報サイクル
@@ -14,8 +14,9 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
 ## モード判定
 
 - 「今日やること」「日報 朝」など**開始時** → 朝モード（宣言）
+- 「途中経過」「中間チェック」「日報 昼」など**日中** → 昼モード（途中経過チェック）。宣言との突き合わせと軌道修正だけで、採点・Notion・Slack 投稿はしない
 - 「日報」「今日のまとめ」など**終了時** → 夜モード(振り返り)。当日ファイルに宣言が無ければ「宣言なし」として進める（催促しない）
-- 「評価チェックだけ」「評価軸レビュー」→ **評価のみモード**。夜モードのうち step 1-3（実績収集）＋ step 5（採点）だけを実行し、日報本体は組まず Slack 投稿もしない（Notion ログへの追記のみ）
+- 「評価チェックだけ」「評価軸レビュー」→ **評価のみモード**。夜モードのうち step 1・2・3a・3b（実績収集）＋ step 5（採点）だけを実行し、日報本体は組まず Slack 投稿もしない（Notion ログへの追記のみ）
 
 ## 評価の参照先（非公開設定）
 
@@ -40,7 +41,9 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
 
 材料を集めて「今日のタスク内容と目標」を作る:
 
-1. 前日（直近）の `~/.claude/daily-report/*.md` の「明日やること」を読む
+> **morning から呼ばれたとき（連携モード）**: `/morning` の手順 8 から起動された場合は、**今日のセッション調査（未完タスクの実態）と自分のオープン PR が既に渡される**。step 3 の PR 再取得はスキップして渡された一覧を使い、渡されたセッション調査を step 1 の「明日やること」と併せて宣言の材料にする（宣言に書いたつもりと "実際どこで止まっていたか" を突き合わせ、地に足のついた宣言にする）。単独で `/daily-report 朝` を叩いたときは従来どおり下記を自分で集める。
+
+1. 前日（直近）の `~/.claude/daily-report/*.md` の「明日やること」を読む（**morning 連携時は、渡された当日のセッション調査＝未完タスクの実態も併せて材料にする**）
 2. **前日の採点を読む（＝今日の目標を立てる軸。最重要）**。夜モードで Notion に付けた辛口採点を引き継ぎ、今日の目標に反映する:
    - 先に eval-config.json を読む（無ければこの step は ⚠️ でスキップ）。`notion-query-data-sources` で直近の採点行を取る（`{log_db}`。以下 SQL の `{log_db}` は設定値に置換）:
      ```sql
@@ -48,7 +51,7 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
      FROM "{log_db}" ORDER BY "実施日" DESC LIMIT 3
      ```
    - 実データの最新 1 行を使う（`📝 記入例`＝実施日が空の行は除外）。読めない / 前日採点が無い時は ⚠️ で明示し、前日ファイルの「明日やること」だけを軸に進める（催促しない）
-3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`
+3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`（**morning 連携時は再取得せず、渡されたオープン PR 一覧を使う**）
 4. ユーザーと 1-2 往復で確定し、当日ファイルに保存する:
 
 ```
@@ -73,9 +76,38 @@ allowed-tools: Task, Bash(git -C *), Bash(gh search prs *), Bash(gh pr list *), 
 - ◎「スピード=△だった → A機能のPRを今日レビュー依頼まで出す（残工数を着手前に宣言してから触る）」
 弱かった軸は、それを取り返す具体タスクと達成ラインに必ず結びつける。抽象的な決意表明は目標として書かない。
 
+## 昼モード: 途中経過を確認して軌道修正する
+
+朝の宣言に対して「今どこまで来ているか・何が詰まっているか」を実データで確認し、**夜を待たずに残り時間の使い方を組み直す**ための軽い中間チェック。**採点はしない・Notion には書かない・Slack 投稿もしない**（自分用の軌道修正）。当日ファイルや宣言が無ければ、進捗の事実だけ軽く出す（催促しない）。
+
+夜モードとの違い: 収集は「当日 00:00〜現在」までの**軽量版**（採点系ソースを読まない・投稿しない・翌日への引き継ぎもしない）。狙いは日報の完成ではなく、**残りの半日をどう使うか**の判断材料を短く出すこと。
+
+1. 当日ファイルの宣言（タスクと達成ライン）を読む。無ければ「宣言なし」として進捗の事実だけ拾う。
+2. **これまでの実績を investigator に委譲して軽く収集する**（夜モードと同じ並列パターンの軽量版。範囲は「当日 00:00〜現在」）。**独立ソースは 1 メッセージでまとめて並列に投げ**、生ログではなく要約だけを返させる。0 件/エラーのソースは ⚠️ で明示して他は止めない。**採点系ソース（eval-config.json・採点基準ページ・career-feed memory・1on1）は読まない**（採点は夜モードだけ）:
+   - 当日のコミット（夜 step 1 の横断スクリプトをそのまま流用）
+   - 自分の PR 活動（作成・更新・レビュー。夜 step 2 の縮小版: `gh search prs --author=@me` / `--reviewed-by=@me` を `updated:>=当日` で）
+   - Claude セッション・memory ＋ 当日の Slack（詰まり・相談・割り込みの兆候。夜 3a/3b の軽量版。Bash/ローカル読みと Slack 検索は別 investigator に割って並列で）
+3. 宣言タスクごとに現在地と軌道修正を出す（`date +'%H:%M'` で時刻を付ける）:
+
+```
+## 途中経過 YYYY-MM-DD HH:MM
+
+### 宣言タスクの現在地
+- <タスク>: <達成ラインに対して今どこか（例: 実装済み・レビュー依頼前 / 未着手）> — <詰まり / 残り>
+
+### 割り込み・想定外
+- <宣言に無かった発生作業。時間を食っている要因。なければ「なし」>
+
+### 残り時間の組み直し
+- <このあと何を優先するか。後ろ倒し / 落とすもの。具体タスクと達成ラインで>
+```
+
+- **精神論で終わらせない**（朝モードと同じ）。「巻き返す」ではなく「残り時間で達成ラインに届かせるには、どのタスクをどうするか」に翻訳する。
+- 当日ファイルに `## 途中経過 HH:MM` ブロックとして追記してよい（夜の突き合わせで「昼どこで詰まっていたか」の材料になる）。**これは自分用の確認なので承認フローは無し**（そのまま追記・提示してよい）。同日に複数回叩かれたら時刻の違うブロックを重ねて追記する。
+
 ## 夜モード: 収集して振り返る
 
-**収集（調査）は全てサブエージェントに委譲する。** step 1-3 の各ソースを `Task`（general-purpose）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。4 ソースは独立なので **1 メッセージで並列に投げる**。返ってきた要約だけを step 4-5 の入力にする。サブエージェントには「収集専任。ファイルは変更しない。当日分だけ・PR/コミット/スレッドの URL を付けて要約を返す」と伝える。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
+**収集（調査）は全て investigator サブエージェントに委譲する。** step 1・2・3a・3b の 4 ソースを `Task`（`investigator`）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。**この 4 本は独立なので 1 メッセージでまとめて並列に投げる**（1 本ずつ順番に投げない＝これが夜の体感速度を決める）。返ってきた要約だけを step 4-5 の入力にする。investigator は read 専任・要約返却が既定なので、渡すのは「当日分だけ・PR/コミット/スレッドの URL 付き」という**範囲指定**でよい。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
 
 各サブエージェントに渡す調査内容:
 
@@ -104,9 +136,9 @@ gh search prs --reviewed-by=@me --json url,title,repository,author --limit 30 --
 
 フラグがエラーになったら `gh search prs --help` で確認して読み替える（結果ゼロとエラーを混同しない）。
 
-### 3. 当日の Claude セッション・memory・Slack を確認
+### 3a. 当日の Claude セッション・memory を確認（ローカル読み取り）
 
-git/PR に現れない作業（調査・設計・レビュー・運用対応・**Slack での議論**）をここで拾う。**これが可視化ギャップの本丸**。以下 3 つを 1 サブエージェントにまとめて調べさせてよい:
+git/PR に現れない作業（調査・設計・レビュー・運用対応）の足跡を、ローカルの履歴と memory から拾う。**読み口が Bash とローカル fd/jq なので、Slack 検索（3b）とは別 investigator に割って並列で投げる**（別ツールを別 Task で同時に走らせて速くする）:
 
 ```bash
 # 当日触ったプロジェクトとプロンプト概要（スキーマは実物を head で確認してから jq を書く）
@@ -116,11 +148,17 @@ jq -r 'select(.timestamp != null)' ~/.claude/history.jsonl | tail -50   # 当日
 fd . ~/.claude/projects --glob '*.md' --changed-within 1d
 ```
 
+→ investigator は Claude セッション・memory を横断し、成果につながる動き（何を調べ / 設計し / 直したか）だけを要約して返す。
+
+### 3b. 当日の Slack を確認
+
+git/PR に現れない **Slack での議論・相談・運用対応**を拾う。**これが可視化ギャップの本丸**。3a とは別 investigator で並列に投げる（Slack 検索は API 往復で遅くなりがちなので、ローカル読みと重ねて待ち時間を隠す）:
+
 - **Slack（調査・相談・運用対応の一次ソース。ユーザーは日報でこれを見ることに同意済み）**: 当日の自分の発言・スレッドを検索する
   - `slack_search_public_and_private` で query = `from:<@自分の user_id> on:<当日 YYYY-MM-DD>`、`sort=timestamp`（自分の user_id はツール説明に `Current logged in user's user_id is …` として表示されるのでそれを使う。公開リポに ID を直書きしない）
   - private チャンネル/DM でも調査・相談が起きるので public 限定にしない
   - 目ぼしいスレッドは `slack_read_thread` で深掘りし、「何を調べ / 決め / 対応したか」を要約（雑談は落とす）
-→ サブエージェントは Claude セッション・memory・Slack を横断し、成果につながる動きだけを URL 付きで要約して返す。
+→ investigator は当日の Slack を横断し、成果につながる議論・対応だけを URL 付きで要約して返す。
 
 ### 4. 朝の宣言と突き合わせて日報を組み立てる
 
@@ -161,10 +199,12 @@ step 1-4 で見えた当日の成果・振り返りを入力に、最終評価�
 
 0. **eval-config.json を読む**（無ければこの step 5 は ⚠️ で丸ごとスキップ）。以下の `{criteria_page}` 等はその値。
 1. **採点基準ページを読む**: `notion-fetch` で page id = `{criteria_page}`
-2. **基準ページが指す evidence を読んで採点する**（cwd に関わらず絶対パス / ID で読む。daily-report は他プロジェクトから走ることが多く自動想起されないため明示的に読む。読めない時は ⚠️ で明示して best-effort で採点し、後続を止めない）。基準ページに evidence の詳細（何を・どの重みで見るか）があるが、機械的な取得先は下記:
-   - career-feed project memory: Read `{career_memory_index}`（索引）＋基準ページが指す個別ファイル
+2. **基準ページが指す evidence の収集は investigator に委譲する**（この 3 ソースはいずれも軽量で採点の突き合わせに一括で使うため 1 つの `investigator` にまとめて投げる〔重い横断調査ではないので分割不要。step 1-3 の夜収集とは別扱い〕。生データでなく「軸ごとに効く事実」の要約を返させる。cwd に関わらず絶対パス / ID で読ませる。daily-report は他プロジェクトから走ることが多く自動想起されないため取得先を明示的に渡す。取れない時は investigator に「取得失敗（理由）」と返させ、main は ⚠️ を明示して best-effort で採点し後続を止めない）。investigator に渡す取得先:
+   - career-feed project memory: `{career_memory_index}`（索引）＋基準ページが指す個別ファイルを Read
    - 最新 1on1 ノート: `notion-query-data-sources` で `SELECT url, createdTime, "名前" FROM "{oneonone_collection}" ORDER BY createdTime DESC LIMIT 1` → 得た `url` を `notion-fetch`
    - 📝 実績メモ（キャリア棚卸し）: `notion-fetch` で page id = `{achievements_page}`
+
+   採点の物差しである **採点基準ページ（step 1）は main が自分で読んで保持する**（要約で精度が落ちないよう investigator に投げない）。investigator が返すのは evidence の要約だけ。
 3. **採点する**: 基準ページの 5 軸を ◎○△× で採点し（下記 DB カラムに対応）、加点材料 / 黄信号 / 明日への一手 / 総評 を付ける。◎ 連発をしない。辛口を貫く。秘匿情報（未公開の人事情報含む）は Notion ログにも書かない（詳細な採点観点・トーンは基準ページに従う）。
 
 **Notion DB へ追記（承認後）:**
