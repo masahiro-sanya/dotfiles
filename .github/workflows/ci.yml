@@ -26,6 +26,20 @@ jobs:
             exit 1
           fi
 
+      - name: Forbid machine-local absolute paths
+        # $HOME と dotfiles の置き場はマシンごとに違う。setup.sh が $HOME へ配る設定・スクリプトに
+        # /Users/<name>/ を直書きすると別マシンで無言で壊れるため、~ / $HOME /
+        # テンプレートのプレースホルダを使う。
+        # 対象は追跡ファイル全体（設定の置き場が増えても自動で対象に入る）。除外は実行されない読み物だけ:
+        # *.md（説明中の例示パス）と mise/anyenv-versions.txt（anyenv versions の出力控え）。
+        run: |
+          if git ls-files -z \
+               | grep -zvE '\.md$|^mise/anyenv-versions\.txt$' \
+               | xargs -0r grep -nE '/Users/[A-Za-z0-9._-]+/'; then
+            echo "machine-local absolute paths must not be committed (use ~ / \$HOME / __HOME__)" >&2
+            exit 1
+          fi
+
       - name: Bash syntax check
         run: |
           for f in claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh git/*.sh git/tests/*.sh setup.sh .githooks/pre-commit; do

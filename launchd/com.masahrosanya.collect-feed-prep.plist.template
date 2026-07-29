@@ -7,7 +7,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/bash</string>
-		<string>/Users/masahrosanya/src/dotfiles/claude/scripts/collect-feed-prep.sh</string>
+		<string>__DOTFILES_DIR__/claude/scripts/collect-feed-prep.sh</string>
 	</array>
 	<key>StartCalendarInterval</key>
 	<array>
@@ -53,8 +53,8 @@
 		</dict>
 	</array>
 	<key>StandardOutPath</key>
-	<string>/Users/masahrosanya/.claude/collect-feed-prep.log</string>
+	<string>__HOME__/.claude/collect-feed-prep.log</string>
 	<key>StandardErrorPath</key>
-	<string>/Users/masahrosanya/.claude/collect-feed-prep.log</string>
+	<string>__HOME__/.claude/collect-feed-prep.log</string>
 </dict>
 </plist>
