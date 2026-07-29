@@ -5,7 +5,8 @@
 # (index) からのみ除去する。ワーキングツリーの実ファイル(ライブ設定)は
 # git がこのフィルタの出力で置き換えないため無傷のまま保持される。
 #
-# 除外対象キーは CLAUDE.md の「絶対にコミットしない」記述と同期させること。
+# 除外対象キーは CLAUDE.md の「絶対にコミットしない」記述、および
+# .github/workflows/ci.yml の "Forbid runtime fields in settings.json" と同期させること。
 #
 # fail-open 設計: jq 不在 / 実行失敗 / 不正 JSON では入力をそのまま素通しし
 # exit 0 する。フィルタが原因で git add / commit が壊れる事態を避ける。
@@ -15,7 +16,7 @@
 set -u
 
 # 除外するランタイムフィールド(top-level キー)
-RUNTIME_KEYS="model tui skipWorkflowUsageWarning agentPushNotifEnabled"
+RUNTIME_KEYS="model effortLevel tui skipWorkflowUsageWarning agentPushNotifEnabled"
 
 # stdin を一旦バッファ(fail-open で素通しできるように)。
 # 外部コマンド(cat)に依存しないよう bash ビルトインの read で全体を読む。

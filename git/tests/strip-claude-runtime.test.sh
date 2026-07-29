@@ -19,6 +19,7 @@ fail() { FAIL=$((FAIL + 1)); echo "  NG: $1"; }
 INPUT_FULL='{
   "theme": "dark",
   "model": "claude-opus-4-8",
+  "effortLevel": "high",
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
@@ -29,7 +30,7 @@ echo "== strip-claude-runtime.sh =="
 
 # 1. ランタイムフィールドが除去される
 out="$(printf '%s' "${INPUT_FULL}" | bash "${FILTER}")"
-if printf '%s' "${out}" | jq -e 'has("model") or has("tui") or has("skipWorkflowUsageWarning") or has("agentPushNotifEnabled")' >/dev/null; then
+if printf '%s' "${out}" | jq -e 'has("model") or has("effortLevel") or has("tui") or has("skipWorkflowUsageWarning") or has("agentPushNotifEnabled")' >/dev/null; then
     fail "ランタイムフィールドが除去される（まだ残っている）"
 else
     pass "ランタイムフィールドが除去される"
