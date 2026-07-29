@@ -27,7 +27,7 @@ jobs:
 
       - name: Bash syntax check
         run: |
-          for f in claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh setup.sh .githooks/pre-commit; do
+          for f in claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh git/*.sh git/tests/*.sh setup.sh .githooks/pre-commit; do
             if [ -f "$f" ]; then
               bash -n "$f"
               echo "syntax OK: $f"
@@ -35,7 +35,10 @@ jobs:
           done
 
       - name: shellcheck
-        run: shellcheck -S warning claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh .githooks/pre-commit
+        run: shellcheck -S warning claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh git/*.sh git/tests/*.sh .githooks/pre-commit
 
       - name: Hooks regression tests
         run: bash claude/hooks/tests/run-tests.sh
+
+      - name: strip-claude-runtime filter tests
+        run: bash git/tests/strip-claude-runtime.test.sh

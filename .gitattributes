@@ -1,0 +1,5 @@
+# claude/settings.json に Claude Code が書き込むランタイムフィールドを
+# git 格納時に自動除去する clean filter。
+# filter 実体は setup.sh が各マシンで登録する(git config filter.strip-claude-runtime.*)。
+# 未登録のマシンでは filter は素通し扱いになり、従来どおり手動運用となる。
+claude/settings.json filter=strip-claude-runtime

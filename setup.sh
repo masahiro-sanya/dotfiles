@@ -73,6 +73,13 @@ if [ -z "$(git config --includes --global user.email)" ]; then
     info "Set git user.email to $GIT_EMAIL (in ~/.gitconfig.local)"
 fi
 
+# Register the clean filter that strips Claude Code runtime fields from
+# claude/settings.json on `git add` (see .gitattributes / git/strip-claude-runtime.sh).
+# Repo-local: the filter only applies to this dotfiles repo. smudge=cat (no-op on checkout).
+git -C "$DOTFILES_DIR" config filter.strip-claude-runtime.clean  "bash $DOTFILES_DIR/git/strip-claude-runtime.sh"
+git -C "$DOTFILES_DIR" config filter.strip-claude-runtime.smudge cat
+info "Registered git clean filter 'strip-claude-runtime' for this repo"
+
 # --- WezTerm ---
 echo "--- WezTerm ---"
 backup_and_link "$DOTFILES_DIR/terminal/wezterm/wezterm.lua"  "$HOME/.config/wezterm/wezterm.lua"
