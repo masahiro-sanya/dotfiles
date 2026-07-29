@@ -87,11 +87,41 @@ make_repo "${REPO_PLAIN}" main
 echo "== guard-bash-command.sh =="
 
 assert 2 guard-bash-command.sh "grep はブロック" "$(bash_json "grep foo bar.txt")"
-assert 2 guard-bash-command.sh "パイプ先の grep もブロック" "$(bash_json "cat a.txt | grep foo")"
+assert 2 guard-bash-command.sh "&& 後の grep はブロック" "$(bash_json "cd /tmp && grep -rn foo src/")"
 assert 0 guard-bash-command.sh "git grep は許可（コマンド位置でない）" "$(bash_json "git grep foo")"
 assert 0 guard-bash-command.sh "引数中の grep は許可" "$(bash_json "rg -n 'use grep here' docs/")"
 assert 2 guard-bash-command.sh "find はブロック" "$(bash_json "find . -name '*.go'")"
 assert 0 guard-bash-command.sh "fd は許可" "$(bash_json "fd -e go")"
+
+# パイプの受け側の grep は許可する（別コマンドの出力の絞り込み＝ rg に替えても効果がない）。
+# find は stdin を読まずファイルシステムを見るため、パイプ後でもブロックを続ける。
+assert 0 guard-bash-command.sh "パイプ先の grep は許可" "$(bash_json "cat a.txt | grep foo")"
+assert 0 guard-bash-command.sh "rg の結果を grep で絞るのは許可" "$(bash_json "rg -n Consent --type kt | grep -v Test")"
+assert 0 guard-bash-command.sh "git show を grep で絞るのは許可" "$(bash_json "git show HEAD | grep -c added")"
+assert 2 guard-bash-command.sh "パイプ先の find はブロック（stdin を読まない）" "$(bash_json "echo x | find . -name '*.go'")"
+
+# クォート内の | をパイプと誤認しない（rg のパターンに | を書いただけで誤爆していた）
+assert 0 guard-bash-command.sh "引用符内の | と grep は許可" "$(bash_json "rg -n 'foo|grep bar' docs/")"
+assert 0 guard-bash-command.sh "引用符内の | と find は許可" "$(bash_json "rg -n \"a|find b\" docs/")"
+
+# リモートシェル（rg/fd が無い）の内側は、クォート除去とコマンド位置判定の結果として
+# 素通りする。専用の除外条件は置かない（置くとガード全体の迂回路になるため。下の回帰参照）
+assert 0 guard-bash-command.sh "adb shell 内の grep は許可（クォート内）" "$(bash_json "adb shell \"dumpsys activity | grep -E top\"")"
+assert 0 guard-bash-command.sh "docker compose exec の grep は許可（コマンド位置でない）" "$(bash_json "docker compose exec -T app grep -rl Trtc tests/")"
+assert 0 guard-bash-command.sh "docker exec 内の find は許可（コマンド位置でない）" "$(bash_json "docker exec palmu-api find /var/www -name '*.php'")"
+assert 0 guard-bash-command.sh "kubectl exec 内の grep は許可（コマンド位置でない）" "$(bash_json "kubectl exec pod -- grep foo /etc/hosts")"
+
+# 回帰: リモートシェル語彙を含む行でも、区切りの後のローカル grep/find はブロックし続ける
+# （「行に ssh/docker exec があればスキップ」という除外を入れるとここが素通りする）
+assert 2 guard-bash-command.sh "ssh の後に && で繋いだローカル grep はブロック" "$(bash_json "ssh host true && grep -rn secret .")"
+assert 2 guard-bash-command.sh "docker exec の後に ; で繋いだローカル grep はブロック" "$(bash_json "docker compose exec app true; grep -rn foo src/")"
+assert 2 guard-bash-command.sh "kubectl exec の後に繋いだローカル find はブロック" "$(bash_json "kubectl exec pod -- true && find . -name '*.go'")"
+
+# 回帰: || は論理 OR（独立コマンド）なのでパイプ受け側の許可対象に含めない
+assert 2 guard-bash-command.sh "|| の後の grep はブロック" "$(bash_json "false || grep -rn pattern src/")"
+assert 2 guard-bash-command.sh "|| の後の find はブロック" "$(bash_json "true || find . -name '*.go'")"
+
+assert 2 guard-bash-command.sh "ローカルの grep は従来どおりブロック" "$(bash_json "grep -rn pattern src/")"
 assert 2 guard-bash-command.sh "素の rm はブロック" "$(bash_json "rm foo.txt")"
 assert 2 guard-bash-command.sh "&& 後の素の rm もブロック" "$(bash_json "cd /tmp && rm x")"
 assert 0 guard-bash-command.sh "command rm は許可（正規の回避形）" "$(bash_json "command rm -f foo")"

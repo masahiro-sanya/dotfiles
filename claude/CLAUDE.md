@@ -52,8 +52,9 @@ Notion に対する HTML の利点は図が見やすいこと。だから図を�
 ## ツール利用の優先順位
 
 - コード探索: serena MCP (`find_symbol`/`search_for_pattern`/`get_symbols_overview`) を優先
-- 文字列検索: `rg`（ripgrep）を優先、`grep` は使わない
-- ファイル検索: `fd` を優先、`find` は使わない
+- 文字列検索: `rg`（ripgrep）を優先。**コードベースを検索する用途で `grep` は使わない**。パイプの受け側（`git show | grep`・`rg ... | grep` のように別コマンドの出力を絞る）は rg に替えても速度も gitignore 考慮も効かないので `grep` のままでよい
+- ファイル検索: `fd` を優先、`find` は使わない（`find` は stdin を読まないため、パイプの後でもファイルシステム検索＝置き換え対象）
+- 上 2 つが対象にするのは**手元で走るコードベース検索**。`adb shell "..."` / `docker exec ... sh -lc '...'` のようにリモート側で実行される中身は対象外（端末やコンテナに rg / fd が入っていないため）。ただし `ssh host cmd && grep ...` のように区切りの後に手元で走らせる分は対象
 - ライブラリのドキュメント: context7 MCP を優先
 - memory（運用知見）の書き込みは `~/.claude/projects/*/memory`（`MEMORY.md` 索引 + 個別 md）に一元化する。serena の `write_memory` は使わない（serena memory は読むだけ。二重管理を避ける）
 
