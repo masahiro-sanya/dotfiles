@@ -226,7 +226,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/masahrosanya/.claude/approver/permission-notify.sh",
+            "command": "if [ -x ~/.claude/approver/permission-notify.sh ]; then ~/.claude/approver/permission-notify.sh; fi",
             "timeout": 65
           }
         ]

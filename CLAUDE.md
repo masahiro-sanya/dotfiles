@@ -11,6 +11,12 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 - pre-commit にランタイムフィールドで止められたら、filter 未登録を疑う（`git config --get filter.strip-claude-runtime.clean` が空なら `setup.sh` を実行）
 - コミット前に `jq . claude/settings.json` で JSON 妥当性を確認する
 
+## マシン固有の絶対パス
+
+- このリポは複数の Mac で共有する。ユーザー名も dotfiles の置き場もマシンごとに違うので、**設定・スクリプトに `/Users/<name>/...` を直書きしない**（別マシンで無言で壊れる。CI が検知して落とす）
+- Claude Code の hook コマンドはシェル経由なので `~/.claude/...` と書く。リポに無いライブ専用スクリプトを呼ぶときは `if [ -x ~/path ]; then ~/path; fi` の形にして、未配置のマシンでは no-op にする
+- launchd の plist は `~` を展開しないため symlink できない。`launchd/*.plist.template` に `__HOME__` / `__DOTFILES_DIR__` を置き、`setup.sh` が実パスを埋めて `~/Library/LaunchAgents/` へ生成する（内容が変わったときだけ bootout → bootstrap）
+
 ## claude/hooks/
 
 - 変更したら必ず `bash -n <script>` と `bash claude/hooks/tests/run-tests.sh` を実行する

@@ -16,6 +16,21 @@ info()  { echo -e "${GREEN}[OK]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[SKIP]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# Backup existing file/dir（$HOME からの相対パス構造を保持し、同名 basename の衝突を防ぐ）
+backup_existing() {
+    local dest="$1"
+
+    if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then
+        return
+    fi
+
+    local rel="${dest#"$HOME"/}"
+    local backup_target="$BACKUP_DIR/$rel"
+    mkdir -p "$(dirname "$backup_target")"
+    mv "$dest" "$backup_target"
+    warn "Backed up: $dest -> $backup_target"
+}
+
 backup_and_link() {
     local src="$1"
     local dest="$2"
@@ -31,14 +46,7 @@ backup_and_link() {
         return
     fi
 
-    # Backup existing file/dir（$HOME からの相対パス構造を保持し、同名 basename の衝突を防ぐ）
-    if [ -e "$dest" ] || [ -L "$dest" ]; then
-        local rel="${dest#"$HOME"/}"
-        local backup_target="$BACKUP_DIR/$rel"
-        mkdir -p "$(dirname "$backup_target")"
-        mv "$dest" "$backup_target"
-        warn "Backed up: $dest -> $backup_target"
-    fi
+    backup_existing "$dest"
 
     # Create parent directory if needed
     mkdir -p "$(dirname "$dest")"
@@ -163,16 +171,54 @@ echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
 
 # --- launchd (morning-prep / collect-feed-prep) ---
+# plist はマシンごとに異なる絶対パス（$HOME / dotfiles の置き場）を含むため symlink できない。
+# リポにはプレースホルダ入りのテンプレートだけを置き、ここで実パスを埋めて生成する。
+# 内容が変わったときだけ bootout → bootstrap で読み直させる。
 echo "--- launchd ---"
+mkdir -p "$HOME/Library/LaunchAgents"
+LAUNCHD_FAILED=0
 for LAUNCHD_LABEL in com.masahrosanya.morning-prep com.masahrosanya.collect-feed-prep; do
+    LAUNCHD_TEMPLATE="$DOTFILES_DIR/launchd/${LAUNCHD_LABEL}.plist.template"
     LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
-    backup_and_link "$DOTFILES_DIR/launchd/${LAUNCHD_LABEL}.plist" "$LAUNCHD_PLIST"
+
+    if [ ! -f "$LAUNCHD_TEMPLATE" ]; then
+        error "Source not found: $LAUNCHD_TEMPLATE"
+        LAUNCHD_FAILED=1
+        continue
+    fi
+
+    LAUNCHD_RENDERED="${LAUNCHD_PLIST}.new"
+    if ! sed -e "s|__DOTFILES_DIR__|${DOTFILES_DIR}|g" \
+             -e "s|__HOME__|${HOME}|g" \
+             "$LAUNCHD_TEMPLATE" > "$LAUNCHD_RENDERED"; then
+        command rm -f "$LAUNCHD_RENDERED"
+        error "Failed to render: $LAUNCHD_TEMPLATE"
+        LAUNCHD_FAILED=1
+        continue
+    fi
+
+    # 旧版は plist を symlink していた。symlink のままなら内容が同じでも作り直す
+    if [ -f "$LAUNCHD_PLIST" ] && [ ! -L "$LAUNCHD_PLIST" ] && cmp -s "$LAUNCHD_RENDERED" "$LAUNCHD_PLIST"; then
+        command rm -f "$LAUNCHD_RENDERED"
+        warn "Already up to date: $LAUNCHD_PLIST"
+    else
+        backup_existing "$LAUNCHD_PLIST"
+        mv "$LAUNCHD_RENDERED" "$LAUNCHD_PLIST"
+        info "Generated: $LAUNCHD_PLIST"
+        # 古い定義が居座らないよう、ロード済みなら一度外す
+        launchctl bootout "gui/$(id -u)/${LAUNCHD_LABEL}" 2>/dev/null || true
+    fi
+
     if launchctl print "gui/$(id -u)/${LAUNCHD_LABEL}" >/dev/null 2>&1; then
         warn "launchd already loaded: ${LAUNCHD_LABEL}"
-    elif launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" 2>/dev/null; then
+    elif launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST"; then
         info "launchd loaded: ${LAUNCHD_LABEL}"
     else
+        # 上で bootout した直後にここへ来ると、ジョブは止まったまま誰にも気づかれない。
+        # 黙って完走させず、最後に exit 1 して setup.sh の失敗として見せる
         error "launchctl bootstrap failed: ${LAUNCHD_PLIST}"
+        error "  再試行: launchctl bootstrap gui/$(id -u) ${LAUNCHD_PLIST}"
+        LAUNCHD_FAILED=1
     fi
 done
 
@@ -183,6 +229,12 @@ if git -C "$DOTFILES_DIR" rev-parse --git-dir >/dev/null 2>&1; then
     info "git core.hooksPath -> .githooks"
 else
     warn "dotfiles is not a git repo, skipping hooksPath"
+fi
+
+if [ "$LAUNCHD_FAILED" -ne 0 ]; then
+    echo ""
+    error "launchd ジョブを読み込めませんでした。上の launchctl エラーを見て解消してください"
+    exit 1
 fi
 
 echo ""
