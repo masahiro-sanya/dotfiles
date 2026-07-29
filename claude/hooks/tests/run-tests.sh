@@ -9,6 +9,17 @@
 
 set -u
 
+# git 由来の環境変数を落としてからフィクスチャを作る。
+# .githooks/pre-commit からこのテストが走るとき、git は GIT_DIR / GIT_INDEX_FILE 等を
+# 環境に置く。これらは引数のパスより優先されるため、make_repo の `git init <path>` や
+# `git -C <path> commit` が一時ディレクトリでなく dotfiles リポ本体に着弾する
+# （実際に main へ空コミットが4つ積まれ、feat/test が生え、core.bare=true にされた）。
+# guard 側も PWD でなく GIT_DIR のブランチを見てしまい、branch 判定のテストが誤って落ちる。
+for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
+    unset "${_v}"
+done
+unset _v
+
 HOOKS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
 trap 'command rm -rf "${TMP_ROOT}"' EXIT
@@ -97,6 +108,23 @@ assert 0 guard-bash-command.sh "メッセージ内の 'git commit' では誤爆�
 assert 0 guard-bash-command.sh "リポ外の git commit は許可（branch 取得不能）" "$(bash_json "git commit -m x")" "${TMP_ROOT}"
 assert 0 guard-bash-command.sh "壊れた JSON は fail-open" "{broken json"
 
+# 監査ログ改変防止（guard-hits / hooks-error / logs/traces）
+assert 2 guard-bash-command.sh "監査ログの command rm はブロック" "$(bash_json "command rm -f ~/.claude/guard-hits.log")"
+assert 2 guard-bash-command.sh "trace ログディレクトリの rm -rf はブロック" "$(bash_json "command rm -rf ~/.claude/logs/traces")"
+assert 2 guard-bash-command.sh "監査ログの mv はブロック" "$(bash_json "mv ~/.claude/hooks-error.log /tmp/x")"
+assert 2 guard-bash-command.sh "truncate はブロック" "$(bash_json "truncate -s 0 ~/.claude/guard-hits.log")"
+assert 2 guard-bash-command.sh "tee 上書きはブロック" "$(bash_json "echo x | tee ~/.claude/guard-hits.log")"
+assert 2 guard-bash-command.sh "上書きリダイレクトはブロック" "$(bash_json "echo x > ~/.claude/guard-hits.log")"
+assert 2 guard-bash-command.sh "noclobber 上書き（>|）もブロック" "$(bash_json "echo x >| ~/.claude/hooks-error.log")"
+assert 0 guard-bash-command.sh "監査ログの読み取りは許可" "$(bash_json "cat ~/.claude/guard-hits.log")"
+assert 0 guard-bash-command.sh "監査ログへの追記（>>）は許可" "$(bash_json "echo note >> ~/.claude/hooks-error.log")"
+assert 0 guard-bash-command.sh "監査ログのバックアップ cp は許可" "$(bash_json "cp ~/.claude/guard-hits.log /tmp/backup.log")"
+assert 0 guard-bash-command.sh "別セグメントの rm と監査ログ読みの複合は許可" "$(bash_json "command rm -f /tmp/x && cat ~/.claude/guard-hits.log")"
+
+# --dangerously-skip-permissions（Light ガイドライン）
+assert 2 guard-bash-command.sh "dangerously-skip-permissions はブロック" "$(bash_json "claude --dangerously-skip-permissions -p task")"
+assert 0 guard-bash-command.sh "引用符内の dangerously-skip 言及は許可" "$(bash_json "echo 'never use --dangerously-skip-permissions'")"
+
 echo "== guard-review-push.sh =="
 
 assert 2 guard-review-push.sh "ゲートリポで未レビュー push はブロック" "$(bash_json "git push")" "${REPO_GATED}"
@@ -151,6 +179,8 @@ check_not_logged() {
 
 check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep foo bar.txt")"
 check_logged "素の rm ブロックを記録する" "bare-rm-blocked" guard-bash-command.sh "$(bash_json "rm foo.txt")"
+check_logged "監査ログ改変ブロックを記録する" "audit-log-tamper-blocked" guard-bash-command.sh "$(bash_json "command rm -f ~/.claude/guard-hits.log")"
+check_logged "dangerously-skip ブロックを記録する" "dangerously-skip-blocked" guard-bash-command.sh "$(bash_json "claude --dangerously-skip-permissions -p task")"
 check_not_logged "fd 許可は記録しない" guard-bash-command.sh "$(bash_json "fd -e go")"
 check_not_logged "command rm 許可は記録しない" guard-bash-command.sh "$(bash_json "command rm -f foo")"
 
@@ -276,16 +306,86 @@ assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s4" "a1"
 assert_state "SubagentStart a2 → sub:2" "sub:2" "SubagentStart" "s4" "a2"
 assert_state "SessionStart で marker 一掃 → idle" "idle" "SessionStart" "s4"
 
-# --- グループ5: SessionEnd は状態ファイルを削除（タブをリポ名だけに戻す）---
+# --- グループ5: ツール発火も busy の起点（UserPromptSubmit の無いターン）---
+# 背景タスクの完了通知で再起動されるターンには UserPromptSubmit が無い。ツール発火を
+# busy に繋がないと、Claude が作業している間ずっと待機中と表示される（実測で再現した回帰）。
+wt_reset
+assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s6"
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s6" "a1"
+assert_state "親 Stop でも sub:1" "sub:1" "Stop" "s6"
+assert_state "最後のサブ終了 → idle" "idle" "SubagentStop" "s6" "a1"
+assert_state "完了通知で再起動→ツール発火で busy（待機中に居座らない）" "busy" "PreToolUse" "s6"
+
+# --- グループ6: 権限プロンプト承認後に waiting が残らない ---
+# Notification(waiting) を戻すのが Stop だけだと、承認して作業を続けている間ずっと
+# 要対応のままになる。承認後に走るツールの PostToolUse で busy に復帰する。
+wt_reset
+assert_state "PreToolUse → busy" "busy" "PreToolUse" "s7"
+assert_state "権限プロンプト → waiting" "waiting" "Notification" "s7"
+assert_state "承認後のツール完了で busy へ復帰（要対応が居座らない）" "busy" "PostToolUse" "s7"
+
+# --- グループ7: サブ稼働中のツール発火は sub:N を壊さない ---
+# PreToolUse は busy を書くが、サブが走っていれば表示は sub:N のままであるべき。
+wt_reset
+assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s8" "a1"
+assert_state "サブ稼働中の PreToolUse でも sub:1 を維持" "sub:1" "PreToolUse" "s8"
+
+# --- グループ8: 死んだロックを回収する ---
+# hook が timeout で殺されると lock_dir が残り、以降そのペインは毎回スピンし切ってから
+# 続行する（実際に pane-47.lock が 8 日間居座っていた）。古いロックは奪って進む。
+wt_reset
+mkdir -p "${WT_DIR}/pane-${WT_PANE}.lock"
+# 31 分前の mtime にして「死んだロック」を作る（30 秒閾値を確実に超える）。
+# 「31分前」の算出は OS 差を吸収: BSD(macOS) は date -v-31M、GNU(Linux/CI) は date -d。
+# どちらも失敗したときだけ現在時刻（この場合テストは意味を成さないが最後の保険）。
+touch -t "$(date -v-31M +%Y%m%d%H%M 2>/dev/null || date -d '31 minutes ago' +%Y%m%d%H%M 2>/dev/null || date +%Y%m%d%H%M)" "${WT_DIR}/pane-${WT_PANE}.lock" 2>/dev/null
+assert_state "死んだロックがあっても状態を更新できる" "busy" "UserPromptSubmit" "s9"
+if [ ! -d "${WT_DIR}/pane-${WT_PANE}.lock" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 死んだロックを回収して解放する"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 死んだロックが残置された"
+fi
+
+# --- グループ9: SessionEnd は状態ファイルを削除（タブをリポ名だけに戻す）---
 wt_reset
 assert_state "UserPromptSubmit → busy" "busy" "UserPromptSubmit" "s5"
 assert_state "SubagentStart a1 → sub:1" "sub:1" "SubagentStart" "s5" "a1"
 assert_state "SessionEnd → 状態ファイル削除(クリア)" "__NONE__" "SessionEnd" "s5"
 
+# --- グループ10: Codex 用エージェントタグ（WEZTERM_STATUS_AGENT=codex）---
+# Codex から呼ぶと表示ファイルに "codex:" が前置され、wezterm.lua 側で専用色・バッジに分かれる。
+# claude 既定は無印のまま（上のグループ群が後方互換を担保）。Codex は busy/idle/waiting のみ。
+run_wt_codex() {
+    printf '%s' "$(wt_json "$1" "$2" "$3")" | \
+        WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" WEZTERM_STATUS_AGENT="codex" \
+        bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+}
+assert_state_codex() {
+    desc="$1"; want="$2"; ev="$3"; sess="$4"; aid="${5:-}"
+    run_wt_codex "${ev}" "${sess}" "${aid}"
+    got="$(wt_read)"
+    if [ "${got}" = "${want}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc}（expected='${want}', got='${got}'）"
+    fi
+}
+wt_reset
+assert_state_codex "UserPromptSubmit → codex:busy" "codex:busy" "UserPromptSubmit" "c1"
+assert_state_codex "PermissionRequest → codex:waiting（権限待ち）" "codex:waiting" "PermissionRequest" "c1"
+assert_state_codex "Stop → codex:idle" "codex:idle" "Stop" "c1"
+assert_state_codex "SessionStart → codex:idle" "codex:idle" "SessionStart" "c1"
+assert_state_codex "PreToolUse → codex:busy" "codex:busy" "PreToolUse" "c1"
+assert_state_codex "busy 中の PostToolUse でも codex:busy（早期抜けで表示維持）" "codex:busy" "PostToolUse" "c1"
+
+# claude 既定（WEZTERM_STATUS_AGENT なし）は無印のまま＝codex タグが漏れない
+wt_reset
+assert_state "claude 既定は無印 busy（codex タグが漏れない）" "busy" "UserPromptSubmit" "c2"
+
 # 非 WezTerm（WEZTERM_PANE 空）では状態ファイルを作らない・exit 0
 command rm -f "${WT_STATE_FILE}"
 printf '%s' "$(wt_json "UserPromptSubmit" "s1")" | \
-    WEZTERM_PANE= WEZTERM_STATE_DIR="${WT_DIR}" \
+    WEZTERM_PANE='' WEZTERM_STATE_DIR="${WT_DIR}" \
     bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
 wt_ec=$?
 if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then

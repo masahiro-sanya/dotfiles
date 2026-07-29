@@ -1,20 +1,36 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(gh pr list *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task
 ---
 
 # 朝一ルーチン
 
 毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること。
 
-> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
+> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。ただし手順 5 は `~/.claude/.collect-feed-last` が今日なら朝前の launchd（collect-feed-prep）で収集済み＝バッチから外し、レポートを読むだけにする（手順 5 の事前実行チェック参照）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
-> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**タスク一覧（TaskList）で登録を裏取り**する。登録が無い（一覧が空・No tasks found など）なら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば生存を確認する（空振りのまま「実行中」と述べない）。
+> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）と `TaskOutput`（block:false）の生存確認で裏取り**する（TaskList は TODO 一覧＝サブエージェントは載らないので裏取りに使えない）。生存が確認できないなら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば TaskOutput で生存を確認する（完了済みは「No task found」＋結果は完了通知で届く＝失敗ではない。空振りのまま「実行中」と述べない）。
 
 ## 手順
 
 > **launchd 事前実行チェック**: まず `cat ~/.claude/.morning-prep-last` を確認し、**今日の日付なら手順 1・2 は launchd（morning-prep）実行済みとして skip** する（サマリには「launchd 実行済み」と記す）。日付が古い・ファイルが無い場合は通常どおり実行する。
+
+### ⏳ 一時ステップ（時限・2026-07-16 追加／パッチ確認でき次第このブロックごと破棄）: Windows「LegacyHive」ゼロデイのパッチ監視
+
+背景: 2026-07-14 に Windows の User Profile Service の権限昇格ゼロデイ（通称 LegacyHive・PoC 公開済み・**CVE 未採番・修正パッチ未提供**）が公表され、社内 Windows 利用者に影響しうる。山口さんと「パッチを待つ」方針で合意済み（#dev-backend-times スレッド: https://light-inc-com.slack.com/archives/C05DZDD6QA2/p1784195710372629 ）。パッチ配布までの間、**毎朝リリース有無だけ確認する**。
+
+**investigator に委譲**して Web を確認させる（Web 検索は investigator が担い、main の文脈を汚さない。**冒頭バッチに相乗りさせてよい**）。investigator への指示:
+
+- 次を Web 検索し、**①修正パッチ配布 ②CVE 採番 ③JPCERT・IPA 注意喚起 ④実際の悪用観測** の4点の最新状況を、各ソースの日付と URL 付きの**要約**で返す:
+  - Microsoft Security Update Guide / MSRC（"User Profile Service" の elevation of privilege セキュリティ更新）
+  - 窓の杜（forest.watch.impress.co.jp）・The Hacker News の続報
+  - JPCERT/CC・IPA の注意喚起
+- 末尾に判定を1行: **「パッチ配布あり」／「まだ（未配布）」**。
+
+main の扱い:
+- **「まだ」なら**: 最終サマリに `⏳ Windows LegacyHive: パッチ未配布（継続監視）` と1行だけ出す。他は何もしない。
+- **「パッチ配布あり」なら**: (1) ユーザーに知らせる。(2) 山谷が上記スレッドで「パッチが出たら再共有します」と宣言済みなので、**スレッドへの続報投稿を促す**（投稿はユーザー承認後）。(3) この一時ステップの役目は完了 → **SKILL.md からこのブロックと最終サマリの `⏳` 行を削除してよいか確認**し、承認されたら削除する（実体は dotfiles リポの `claude/skills/morning/SKILL.md`・symlink 経由でライブ反映）。
 
 ### 1. Claude Code 本体を更新
 
@@ -76,9 +92,13 @@ main は返ってきた整形済みリストをそのまま提示し、サマリ
 
 ### 5. 技術記事フィード収集
 
+> **launchd 事前実行チェック**: まず `~/.claude/.collect-feed-last` を Read し、**今日の日付なら朝前の launchd（collect-feed-prep）が収集済み**。feed-collector は起動せず、`~/.claude/collect-feed-report.md` を Read してそのレポートを提示する（headless の main セッションで Workflow 並列巡回が使えるため、対話セッション側は読むだけで済む。サマリには登録件数と「launchd 実行済み」を記す）。スタンプが今日でない場合も、`~/.claude/collect-feed-prep.log` の末尾を Read し、**今日の start があって完了記録が無ければ launchd 収集が進行中**（8:15 開始で 1 時間半ほどかかる）＝feed-collector を起動しない（二重収集の防止）。手順 5 は「launchd 収集中（レポートは完了後に確認）」としてサマリに記す。スタンプもログも今日でない（＝ジョブが落ちた・走らなかった）場合のみ、以下の feed-collector 委譲を実行する。
+
 **feed-collector に委譲**する（config 読み・Notion クエリ・巡回ログで main の文脈を汚さないため）。**朝で最重量の手順なので、手順 3・4 と一緒に冒頭バッチで同時起動する**（survey と重ねて待ち時間を隠す）。feed-collector は `collect-feed:collect-feed` を最後まで回し（古い記事のアーカイブ・Notion 登録・🚨時の Slack 通知・light-inc 横断調査まで）、**Step 10 の収集レポートだけ**を返す。main はそのレポートを提示し、サマリに Notion 登録件数を出す。
 
-- **フォールバック**: feed-collector がサブエージェント内で収集を完了できない場合（内部 Workflow を起動できず縮退巡回にも失敗したとき等）に限り、main が従来どおり Skill ツールで `collect-feed:collect-feed` を直接実行する（他手順の委譲はそのまま）。
+- **20〜30 分かかるのが正常・遅くても kill しない**: サブエージェント内では `Workflow` が使えず、約50ソースを単独直列で WebFetch＋途中で自動コンテキスト圧縮が数回走るため、この手順は元々20〜30分かかる。無反応に見えても、まず `TaskOutput`（block:false）等で **進捗を確認** し、能動的に tool を叩いていれば正常＝待つ。**前進しているジョブを止めない**（過去に前進中の feed を kill して 27 分の仕事を 65 分に伸ばした）。
+- **最終サマリを feed で待たない（ブロックしない）**: 手順 8 の宣言は 手順 3・4 だけで組めて feed に依存しないので、**手順 1-4・6-8 が終わっても feed がまだ収集中なら、手順 5 を「収集中（縮退モード・完了後に別途報告）」としてサマリを先に出してよい**。feed-collector が完了したらそのレポートを追記する。feed 待ちで朝ルーチン全体を止めない。
+- **フォールバック**: feed-collector が収集を完了できない（単独直列の順次巡回にも失敗した）場合に限り、main が従来どおり Skill ツールで `collect-feed:collect-feed` を直接実行する（**main なら `Workflow` が使えて並列巡回が復活する＝速い**。他手順の委譲はそのまま）。
 
 ### 6. 月次 memory 還流（月初のみ）
 
@@ -94,7 +114,7 @@ main は返ってきた整形済みリストをそのまま提示し、サマリ
 
 1. `~/.claude/skills/morning/agent-usage.py 7` を実行し、直近7日の Task 委譲を **subagent_type 別に集計** する。
 2. `~/.claude/guard-hits.log`（あれば）を Read し、**reason 別に発火件数を集計** する（無ければ「発火なし」）。
-3. `~/.claude/hooks-error.log`（あれば）を Read し、**直近1週間の fail-open 記録**（どの hook のどのパースが落ちたか）を抽出する（無ければ「fail-open なし」）。
+3. `~/.claude/hooks-error.log`（あれば）を Read し、**直近1週間の fail-open 記録**（どの hook のどのパースが落ちたか）を抽出する（無ければ「fail-open なし」）。`jq parse failed` の行には真因特定用の診断（`bytes=`＝入力バイト数、`jqerr=`＝パースエラー位置）が付いているので、再発があればその値も併せて報告する（入力が途中で切れているのか・壊れた JSON なのかを切り分ける材料になる）。
 
 main は返ってきた要約に **講評・判定を付ける**（この判断は main が持つ）:
 - **委譲の偏り**: **general-purpose に寄りすぎていないか**（例: 「調査・検証は investigator / verify-runner に寄せられたはず」）。自作エージェントへ委譲が移っているかの定点観測。
@@ -131,6 +151,7 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
 7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件・fail-open <L> 件（または "今週実施済み" / "週初でないためスキップ"）
 8. 宣言: 投稿済み / ドラフト提示（または "見送り"）
+⏳ Windows LegacyHive: パッチ未配布（継続監視）／パッチ配布あり → 再共有促し＋本ステップ破棄提案（※パッチ確認後に一時ステップごと削除）
 ```
 
 ## 注意事項

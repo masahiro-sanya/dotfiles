@@ -9,6 +9,9 @@
 ssh/id_*
 !ssh/*.pub
 
+# setup.sh のバックアップ（保存先はリポ外に移したが、旧版が作った backup/ を追跡しない保険）
+backup/
+
 # Claude Code
 claude/settings.local.json
 claude/claude.json

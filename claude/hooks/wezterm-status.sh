@@ -19,6 +19,10 @@
 #    するだけで marker は消さない。全 SubagentStop が揃って初めて sub 表示が解ける。
 #  - SubagentStop は 1 体につき 2 回発火することがある（非決定的）。数を増減するのでなく
 #    agent_id ごとの marker 集合にすることで二重発火に idempotent（重複する touch/rm は no-op）。
+#  - busy の起点は UserPromptSubmit だけでは足りない。ターンはユーザー以外からも始まる
+#    （背景タスクの完了通知による再起動など）ため、UserPromptSubmit の無いターンが
+#    待機中のまま作業してしまう。権限プロンプト承認後も waiting が Stop まで残る。
+#    PreToolUse/PostToolUse も busy の起点にすることで両方を塞ぐ。
 #
 # なぜ OSC(SetUserVar) でなくファイルか:
 #  - Claude Code が hook を起動する子プロセスは制御端末を持たない。/dev/tty は
@@ -27,18 +31,20 @@
 #  - ファイルなら tty/stdout 非依存で全イベント一様に確実。
 #
 # 設計方針（このリポの hooks 共通ルール）:
-#  - fail-open: 何があっても exit 0。Claude をブロックしない。異常は hooks-error.log に痕跡。
+#  - fail-open: 何があっても exit 0。Claude をブロックしない。異常は wezterm-status-error.log に痕跡
+#    （表示系のノイズであって guard の無効化ではないので、週次点検が読む hooks-error.log には混ぜない）。
 #  - macOS 標準 bash 3.2 互換。変数展開は ${var} 形式。
 #  - 非 WezTerm(WEZTERM_PANE 未設定)では完全に no-op（他端末で誤動作しない）。
 #  - stdout には一切書かない。
 #
 # テスト用フック(env で差し替え):
 #  - WEZTERM_STATE_DIR : 状態ファイル群の保存先（既定 ~/.claude/wezterm-state）
+#  - WEZTERM_STATUS_ERROR_LOG : 異常痕跡ログの書き先（既定 ~/.claude/wezterm-status-error.log）
 set -u
 
 log_err() {
   printf '%s wezterm-status: %s\n' "$(date '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)" "$1" \
-    >> "${HOME}/.claude/hooks-error.log" 2>/dev/null
+    >> "${WEZTERM_STATUS_ERROR_LOG:-${HOME}/.claude/wezterm-status-error.log}" 2>/dev/null
 }
 
 # 非 WezTerm では無効（fail-safe）
@@ -50,16 +56,32 @@ if [ ! -t 0 ]; then
   input="$(cat 2>/dev/null)"
 fi
 
-# イベント名と agent_id を取り出す（jq 失敗時は空のまま続行 = fail-open）
-event=""
+# イベント名と agent_id を取り出す（jq 失敗時は空のまま続行 = fail-open）。
+# 登録側が第1引数でイベント名を渡していればそれを優先し、agent_id を使わない
+# イベント（Subagent 系以外）では jq を起動しない。PreToolUse/PostToolUse は
+# ツール呼び出しのたびに発火するので、この 1 プロセス削減が効く。
+event="${1:-}"
 aid=""
-if [ -n "${input}" ] && command -v jq >/dev/null 2>&1; then
-  IFS=$'\t' read -r event aid <<EOF
+_need_json=""
+case "${event}" in
+  ""|SubagentStart|SubagentStop) _need_json=1 ;;
+esac
+if [ -n "${_need_json}" ] && [ -n "${input}" ] && command -v jq >/dev/null 2>&1; then
+  IFS=$'\t' read -r _ev aid <<EOF
 $(printf '%s' "${input}" | jq -r '[(.hook_event_name // ""), (.agent_id // "")] | @tsv' 2>/dev/null)
 EOF
+  [ -z "${event}" ] && event="${_ev}"
 fi
-# 保険: 登録側から第1引数でイベント名を渡された場合はそちらを優先
-[ -n "${1:-}" ] && event="$1"
+
+# 表示するエージェント種別（既定 claude）。Codex から呼ぶときは WEZTERM_STATUS_AGENT=codex を渡す。
+# 表示ファイルの中身に "codex:" を前置し、wezterm.lua 側で色・バッジを分ける。claude は
+# 後方互換のため無印のまま（既存の状態ファイル・テストを壊さない）。Claude と Codex は同一
+# ペインで同時には走らない（1 ペイン=1 前面プロセス）ので main-/marker のファイル名は共有でよい。
+agent="${WEZTERM_STATUS_AGENT:-claude}"
+case "${agent}" in
+  claude|codex) ;;
+  *) agent="claude" ;;
+esac
 
 state_dir="${WEZTERM_STATE_DIR:-${HOME}/.claude/wezterm-state}"
 mkdir -p "${state_dir}" 2>/dev/null
@@ -90,6 +112,27 @@ count_agents() {
 }
 clear_agents() { command rm -f "${agent_prefix}"* 2>/dev/null; }
 
+# PreToolUse/PostToolUse はツール呼び出しのたびに発火する。既に busy なら表示は変わらない
+# ので、ロックも読み書きもせず即抜ける（毎ツールの固定コストを避ける）。サブ marker の増減は
+# SubagentStart/Stop 側が反映するため、ここを飛ばしても表示は崩れない。
+case "${event}" in
+  PreToolUse|PostToolUse)
+    [ "$(read_main)" = "busy" ] && exit 0 ;;
+esac
+
+# 死んだロックの回収: hook が timeout で殺されると lock_dir が残り、以降そのペインは
+# 毎回スピンし切ってから続行する（実際に pane-47.lock が 8 日間居座っていた）。
+# 生きたロックの保持は一瞬なので、30 秒以上古いものは死んだプロセスのものとみなして奪う。
+if [ -d "${lock_dir}" ]; then
+  _now="$(date +%s 2>/dev/null)"
+  # mtime 取得は OS 差を吸収する: GNU(Linux/CI) は stat -c %Y、BSD(macOS) は stat -f %m。
+  # 非対応側は unknown option で非0終了するので || で両対応（片方だけ成功して片方は空）。
+  _lockts="$(stat -c %Y "${lock_dir}" 2>/dev/null || stat -f %m "${lock_dir}" 2>/dev/null)"
+  if [ -n "${_now}" ] && [ -n "${_lockts}" ] && [ "$((_now - _lockts))" -gt 30 ]; then
+    rmdir "${lock_dir}" 2>/dev/null && log_err "stale lock reclaimed: ${lock_dir}"
+  fi
+fi
+
 # 表示ファイルの read-modify-write を直列化（並列サブの起動/終了に備える。
 # 取れなくても続行＝多少のズレは次イベントで自己回復するので実害小）。
 _locked=""
@@ -102,10 +145,14 @@ done
 
 clear=""
 case "${event}" in
-  UserPromptSubmit)
+  UserPromptSubmit|PreToolUse|PostToolUse)
+    # ツール呼び出しは「Claude が動いている」ことの確実な証拠。UserPromptSubmit だけを
+    # busy の起点にすると、ユーザー以外が始めるターン（背景タスクの完了通知による再起動など）
+    # が busy に入らず、作業中ずっと待機中と表示される。また権限プロンプトを承認したあとも
+    # waiting が Stop まで残る。どちらもツール発火を busy に繋ぐことで解ける。
     write_main "busy" ;;
-  Notification)
-    write_main "waiting" ;;
+  Notification|PermissionRequest)
+    write_main "waiting" ;;                              # Codex は権限プロンプトを PermissionRequest で通知する
   Stop|StopFailure)
     write_main "idle" ;;                                # marker は消さない（背景 agent を生かす）
   SessionStart)
@@ -136,6 +183,8 @@ else
   else
     display="${main}"
   fi
+  # Codex は "codex:" を前置して wezterm.lua 側で専用色・バッジに分ける（claude は無印）。
+  [ "${agent}" = "codex" ] && display="codex:${display}"
   # temp+mv で原子的に差し替え（wezterm 側が書き込み途中を読まないように）
   tmp="${state_file}.$$"
   if printf '%s' "${display}" > "${tmp}" 2>/dev/null; then
