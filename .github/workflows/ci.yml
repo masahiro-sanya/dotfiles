@@ -18,8 +18,9 @@ jobs:
           jq . codex/hooks.json > /dev/null
 
       - name: Forbid runtime fields in settings.json
+        # キー一覧は git/strip-claude-runtime.sh が唯一の定義元（--check に委ねる）
         run: |
-          bad="$(jq -r 'keys[] | select(. == "model" or . == "effortLevel" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled")' claude/settings.json)"
+          bad="$(bash git/strip-claude-runtime.sh --check < claude/settings.json)"
           if [ -n "$bad" ]; then
             echo "runtime fields must not be committed: $bad" >&2
             exit 1

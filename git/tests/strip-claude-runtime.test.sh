@@ -73,6 +73,54 @@ else
     fail "出力が改行終端でない"
 fi
 
+# 6. --list はキーを1行1件で出す
+list_out="$(bash "${FILTER}" --list)"
+if [ "$(printf '%s\n' "${list_out}" | wc -l | tr -d ' ')" -ge 5 ] \
+   && printf '%s\n' "${list_out}" | grep -qx 'effortLevel'; then
+    pass "--list はランタイムフィールドを1行1件で出す"
+else
+    fail "--list の出力が不正"
+fi
+
+# 7. --check は含まれるランタイムフィールドだけを報告する
+check_out="$(printf '%s' "${INPUT_FULL}" | bash "${FILTER}" --check)"
+if printf '%s\n' "${check_out}" | grep -qx 'model' \
+   && printf '%s\n' "${check_out}" | grep -qx 'effortLevel' \
+   && ! printf '%s\n' "${check_out}" | grep -qx 'theme'; then
+    pass "--check は該当キーだけを報告する"
+else
+    fail "--check の報告内容が不正（${check_out}）"
+fi
+
+# 8. --check は該当なしなら何も出さない
+clean_out="$(printf '%s' '{"theme":"dark"}' | bash "${FILTER}" --check)"
+if [ -z "${clean_out}" ]; then
+    pass "--check は該当なしなら何も出さない"
+else
+    fail "--check が余計な出力をした（${clean_out}）"
+fi
+
+# 9. --check は不正 JSON でも fail-open（何も出さず exit 0）
+bad_out="$(printf '%s' "${broken}" | bash "${FILTER}" --check)"
+rc_bad=$?
+if [ "${rc_bad}" -eq 0 ] && [ -z "${bad_out}" ]; then
+    pass "--check は不正 JSON で fail-open"
+else
+    fail "--check が不正 JSON で fail-open しない（rc=${rc_bad}）"
+fi
+
+# 10. 定義元と consumer（pre-commit / CI）が食い違っていない。
+#     以前は3箇所が各自にキー一覧を持ち、食い違って commit が詰まった。
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+drift=0
+for consumer in "${REPO_ROOT}/.githooks/pre-commit" "${REPO_ROOT}/.github/workflows/ci.yml"; do
+    if grep -q 'skipWorkflowUsageWarning' "${consumer}" 2>/dev/null; then
+        fail "$(basename "${consumer}") がキー一覧を自前で持っている（--check に委ねること）"
+        drift=1
+    fi
+done
+[ "${drift}" -eq 0 ] && pass "pre-commit / ci.yml はキー一覧を持たず --check に委ねている"
+
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
 [ "${FAIL}" -eq 0 ] || exit 1
