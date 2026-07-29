@@ -21,6 +21,9 @@ if [ -z "${staged}" ]; then
     exit 0
 fi
 
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "${PWD}")"
+runtime_filter="${repo_root}/git/strip-claude-runtime.sh"
+
 run_hook_tests=0
 
 # 高確度の秘密パターン（形式が確定的なもののみ。誤検知を抑えるため緩いパターンは入れない）
@@ -34,10 +37,19 @@ while IFS= read -r f; do
             if ! printf '%s\n' "${content}" | jq . >/dev/null 2>&1; then
                 err "claude/settings.json が JSON としてパースできません"
             else
-                bad="$(printf '%s\n' "${content}" | jq -r 'keys[] | select(. == "model" or . == "effortLevel" or . == "tui" or . == "skipWorkflowUsageWarning" or . == "agentPushNotifEnabled" or . == "skipDangerousModePermissionPrompt")')"
+                # キー一覧は git/strip-claude-runtime.sh が唯一の定義元（--check に委ねる）
+                if [ ! -f "${runtime_filter}" ]; then
+                    printf 'pre-commit: %s が無いためランタイムフィールド検査を省略しました\n' "${runtime_filter}" >&2
+                    bad=""
+                else
+                    bad="$(printf '%s\n' "${content}" | bash "${runtime_filter}" --check)"
+                fi
                 if [ -n "${bad}" ]; then
                     err "claude/settings.json にランタイムフィールドが含まれています（コミット禁止）: $(printf '%s' "${bad}" | tr '\n' ' ')"
-                    err "  除去してから再コミットしてください（例: git restore --staged claude/settings.json して該当キーを削除）"
+                    err "  clean filter が未登録の可能性があります。setup.sh を実行するか、次を1回実行してください:"
+                    err "    git config filter.strip-claude-runtime.clean \"bash \$PWD/git/strip-claude-runtime.sh\""
+                    err "    git config filter.strip-claude-runtime.smudge cat"
+                    err "  登録後に git add し直すと、実ファイルは無傷のまま index からだけ除去されます"
                 fi
             fi
             ;;
