@@ -49,13 +49,39 @@ fi
 # 検知漏れ許容: xargs/env/time 経由の間接実行までは追わない。
 cmd_pos='(^|[|;&(]|\$\(|`)[[:space:]]*(command[[:space:]]+)?(sudo[[:space:]]+)?'
 
-if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}(grep|egrep|fgrep)([[:space:]]|$)"; then
+# クォート内（コミットメッセージ・rg のパターン等のデータ）を除去した形。
+# grep/find・--no-verify・git commit の判定はこちらを使い、データとしての言及で誤爆させない。
+# 実測: `rg -n -e 'a|grep b' f` のようにクォート内の | をパイプと誤認して grep 判定が誤爆していた。
+# 併せて `||`（論理 OR）を `;` に正規化する。下の grep_pos はパイプ受け側を許可するために
+# アンカーから | を外しており、正規化しないと `false || grep -rn x src/` が素通りするため。
+# `||` の後ろは前段の出力を受けない独立コマンド＝コードベース検索そのものなので検知対象。
+# 既知の穴: コマンド語自体をクォートした形（`"grep" -rn x .`）は語ごと消えて検知できない。
+# クォートを剥がして中身を残す形にすると `rg -n 'a|grep b'` の誤爆が戻るため、そのまま許容する
+# （このガードは自分の手癖を直すためのもので、回避を試みる相手を想定した境界ではない）。
+cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs; s/'[^']*'//gs; s/\|\|/;/gs" 2>/dev/null || printf '%s' "${cmd}")"
+
+# リモートシェル（adb shell / docker exec / ssh 等）の内側には rg/fd が無いが、
+# そのための専用の除外は置かない。実測: guard-hits.log にある該当 5 件はいずれも
+# 内側のコマンドがクォート内（= cmd_stripped で消える）か、コマンド位置に来ない
+# （`docker compose exec -T app grep ...` の grep は区切り直後ではない）ため、
+# 下の 2 つの判定だけで既に素通りする。
+# 「行に ssh/docker exec 等を含むならスキップ」という形の除外は、
+# `ssh host true && grep -rn secret .` でガード全体を迂回できてしまうので採らない。
+
+# grep はパイプの受け側を検知しない（cmd_pos から | を外した grep_pos を使う）。
+# `git show | grep` や `rg ... | grep` は既に別コマンドが出した出力の絞り込みで、
+# rg に替えても速度も gitignore 考慮も効かない＝ルールの狙い（コードベース検索は rg）の外側。
+# 実測: grep 差し戻し 342 件のうち 156 件がこの形で、往復コストだけ払っていた。
+# 検知漏れ許容: `true | grep -rn pattern src/` のような前置きパイプ経由の検索は素通りする。
+grep_pos='(^|[;&(]|\$\(|`)[[:space:]]*(command[[:space:]]+)?(sudo[[:space:]]+)?'
+if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${grep_pos}(grep|egrep|fgrep)([[:space:]]|$)"; then
     log_block "grep-blocked" "${cmd}"
     echo "grep は使わない（CLAUDE.md）。rg（ripgrep）で書き直してください。例: rg -n 'pattern' path/" >&2
     exit 2
 fi
 
-if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; then
+# find は stdin を読まないため、パイプの受け側でもファイルシステム検索のまま＝ cmd_pos のまま検知する。
+if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; then
     log_block "find-blocked" "${cmd}"
     echo "find は使わない（CLAUDE.md）。fd で書き直してください。例: fd 'name' path/ / fd -e go" >&2
     exit 2
@@ -89,9 +115,8 @@ if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}(rm|mv|shred|unlink|tru
     exit 2
 fi
 
-# --no-verify / git commit 検知はクォート内（コミットメッセージ等のデータ）を
-# 除去してから判定する（メッセージ本文に書いただけで誤爆しないように）
-cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs; s/'[^']*'//gs" 2>/dev/null || printf '%s' "${cmd}")"
+# 以降の --no-verify / git commit 検知も cmd_stripped（上で算出）で行う。
+# コミットメッセージ本文に書いただけで誤爆しないようにするため。
 
 # 権限確認の一括スキップ禁止（Light ガイドライン第3条の機械化）。
 # クォート内の言及（ドキュメント・メッセージ）は cmd_stripped で除去済みのため誤爆しない。
