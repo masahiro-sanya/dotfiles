@@ -29,7 +29,8 @@ eval "$(direnv hook zsh)"
 export PATH="$PATH:$(go env GOPATH)/bin"
 eval "$(/opt/homebrew/bin/mise activate zsh)"
 
-eval "$(anyenv init -)"
+# anyenv init はファイル冒頭（14-15行目）で実行済み。ここでの再実行は重複なので削除した。
+# 実測: 対話シェルの起動が約 0.25s 短縮される（anyenv init - 自体のコスト）
 # Claude Code: auto compact window size
 export CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000
 
@@ -66,7 +67,10 @@ fi
 # prezto の terminal モジュールは Apple_Terminal 限定でしか OSC 7 を出さない。
 # wezterm でタブ名にリポ名を出すには pane の cwd が要るので、自前で補う。
 # cw は `cd <repo> && claude` なので、claude 起動直前の cd(chpwd) で repo が通知される。
-if [[ -n "$WEZTERM_PANE" ]]; then
+# stdout が端末でないときは出さない。`zsh -ilc '<cmd>'` の出力を読む外部ツール
+# （LightDeskHub は `command -v claude` の結果を絶対パス扱いする）に対して、
+# エスケープシーケンスが同じ行の先頭に混入してパースを壊すため。
+if [[ -n "$WEZTERM_PANE" && -t 1 ]]; then
   autoload -Uz add-zsh-hook
   _wezterm_osc7() { printf '\e]7;file://%s%s\a' "${HOST}" "${PWD// /%20}"; }
   add-zsh-hook chpwd _wezterm_osc7
@@ -134,21 +138,27 @@ _cw() {
 command -v compdef >/dev/null 2>&1 && compdef _cw cw
 
 # claude ラッパー: 親ディレクトリ（~/src / ~/src/palmu そのもの）での起動に警告
-claude() {
-  local ans
-  case "$PWD" in
-    "$HOME/src"|"$HOME/src/palmu")
-      echo "claude: $PWD は親ディレクトリです。memory/設定が分散するため個別リポでの起動を推奨します（cw <リポ名> が使えます）。" >&2
-      printf 'このまま起動しますか？ [y/N] ' >&2
-      read -r ans
-      case "$ans" in
-        y|Y|yes|YES) ;;
-        *) echo "claude: 中止しました" >&2; return 1 ;;
-      esac
-      ;;
-  esac
-  command claude "$@"
-}
+# 端末から使うときだけ定義する。関数があると `command -v claude` がパスではなく
+# 関数名 "claude" を返すため、対話シェル経由でパス解決する外部ツール
+# （LightDeskHub は `zsh -ilc 'command -v claude'` の結果を絶対パス扱いする）が壊れる。
+# そもそも中で確認プロンプトを読むので、端末が無い呼び出しでは無効で構わない。
+if [[ -t 0 && -t 1 ]]; then
+  claude() {
+    local ans
+    case "$PWD" in
+      "$HOME/src"|"$HOME/src/palmu")
+        echo "claude: $PWD は親ディレクトリです。memory/設定が分散するため個別リポでの起動を推奨します（cw <リポ名> が使えます）。" >&2
+        printf 'このまま起動しますか？ [y/N] ' >&2
+        read -r ans
+        case "$ans" in
+          y|Y|yes|YES) ;;
+          *) echo "claude: 中止しました" >&2; return 1 ;;
+        esac
+        ;;
+    esac
+    command claude "$@"
+  }
+fi
 
 # chandoff: いま居る Claude Code セッションを Markdown に書き出して次セッションへ引き継ぐ。
 # セッション内で `!chandoff` として実行すると CLAUDE_CODE_SESSION_ID が渡り、
@@ -160,7 +170,7 @@ chandoff() {
 
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
 export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
-export PATH="$HOME/.local/bin:$PATH"
+# PATH への ~/.local/bin 追加は .zshenv へ移動（非対話シェルからも見えるようにするため）
 
 # Vite+ bin (https://viteplus.dev)
 . "$HOME/.vite-plus/env"
