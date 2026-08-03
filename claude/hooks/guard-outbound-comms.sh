@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # Claude Code PreToolUse hook (Bash / 対人送信系 MCP ツール)
-# 他の人に届く操作（GitHub のレビュー返信・コメント・PR/Issue 作成・レビュー依頼、
-# Slack 投稿・リアクション、Notion コメント、メール送信）をブロックし、
-# 本文と宛先をユーザーに提示して承認を得てから送らせる。
-# 読み取り系（gh pr view / diff、slack_read_*、notion-fetch 等）は対象外。
+# 「特定の人に呼びかける操作」をブロックし、本文と宛先をユーザーに提示して
+# 承認を得てから送らせる。
+#
+# ブロックする:
+#   - GitHub のコメント・レビュー返信（gh pr/issue comment、gh pr review、gh api、GraphQL）
+#   - GitHub のレビュー依頼・アサイン（--add-reviewer / --add-assignee 等）
+#   - Slack の送信のうち、本文にメンションを含むもの と DM 宛のもの
+#   - Notion のコメント
+#   - メール送信
+# 通す:
+#   - 読み取り系すべて（gh pr view / diff、slack_read_*、notion-fetch 等）
+#   - gh pr create / gh issue create（レビュー依頼フラグを伴わないもの）
+#   - メンションなしの Slack チャンネル投稿・リアクション・canvas
 #
 # 承認後の送り方（ユーザーの承認を得たときだけ）:
 #   touch ~/.claude/outbound-ok   # 承認マーカー（10分有効・1回で消費）
@@ -54,25 +63,51 @@ consume_marker() {
     return 0
 }
 
+# ヒアドキュメント本文を落とす（stdin → stdout）。
+# コミットメッセージや PR 本文はコマンドではないのに、tool_input.command には
+# 丸ごと入ってくる。判定の grep は行単位に効くので、本文中の "gh pr create" 等の
+# 行が実コマンドとして誤検知される（実際に自リポのコミットをブロックした）。
+strip_heredocs() {
+    _delim=''
+    while IFS= read -r _line || [ -n "${_line}" ]; do
+        if [ -n "${_delim}" ]; then
+            # 終端行（<<- 用に先頭タブ/空白を許容）まで本文として捨てる
+            case "$(printf '%s' "${_line}" | /usr/bin/sed 's/^[[:space:]]*//')" in
+                "${_delim}") _delim='' ;;
+            esac
+            continue
+        fi
+        printf '%s\n' "${_line}"
+        # <<EOF / <<'EOF' / <<-"EOF" の開始を拾う（herestring <<< は対象外）
+        _d="$(printf '%s\n' "${_line}" \
+            | /usr/bin/sed -nE "s/.*(^|[^<])<<-?[[:space:]]*['\"]?([A-Za-z_][A-Za-z0-9_]*).*/\\2/p")"
+        [ -n "${_d}" ] && _delim="${_d}"
+    done
+}
+
 # ---- 判定: コマンド文字列 ----
 # 対人送信なら "分類<TAB>理由" を stdout に出して return 0、非該当は return 1。
 classify_command() {
-    _cmd="$1"
+    _cmd="$(printf '%s\n' "$1" | strip_heredocs)"
     [ -z "${_cmd}" ] && return 1
 
     # コマンド位置の gh / gog だけを見る（echo やコミットメッセージ中の文字列で誤爆させない）
     _cmd_pos='(^|[|;&(]|\$\(|`)[[:space:]]*'
     _gh_opts='([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?'
 
-    # gh pr comment / gh pr review / gh pr create / gh issue comment / gh issue create
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+(comment|review|create)([[:space:]]|$)"; then
-        printf 'gh-pr-issue-write\tレビューコメント・PR/Issue への書き込みです。勝手に返信・投稿しないこと。本文をユーザーに提示して承認を得てください。\n'
+    # gh pr comment / gh pr review / gh issue comment（＝人への返信）
+    # gh pr create / gh issue create は自分の成果物の提出で、レビュー依頼フラグが
+    # 付かない限り特定の人への呼びかけではないため通す（下の --add-reviewer 判定で拾う）
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+(comment|review)([[:space:]]|$)"; then
+        printf 'gh-pr-issue-write\tレビューコメント・返信です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
         return 0
     fi
 
-    # gh pr edit --add-reviewer など、他の人を巻き込むフラグ
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+" \
-        && printf '%s\n' "${_cmd}" | /usr/bin/grep -qE '(--add-reviewer|--add-assignee|--reviewer|--assignee)([[:space:]]|=|$)'; then
+    # gh pr edit --add-reviewer など、他の人を巻き込むフラグ。
+    # gh 本体とフラグが同じ行にあることを 1 つの正規表現で要求する（別々の grep を
+    # 全体にかけると、離れた行の断片同士が組み合わさって誤爆する）
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
+        "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+[^|;&]*(--add-reviewer|--add-assignee|--reviewer|--assignee)([[:space:]]|=|$)"; then
         printf 'gh-request-review\tレビュー依頼・アサインは相手に通知が飛びます。誰に依頼するかユーザーに確認してください。\n'
         return 0
     fi
@@ -102,14 +137,33 @@ classify_command() {
     return 1
 }
 
-# ---- 判定: MCP ツール名 ----
-# plugin 名を含むプレフィックスは環境で変わりうるので mcp__.*<service>.*__ で受ける
-classify_tool() {
+# ---- 判定: MCP ツール ----
+# plugin 名を含むプレフィックスは環境で変わりうるので mcp__.*<service>.*__ で受ける。
+# $1=ツール名 $2=hook への入力 JSON 全体
+classify_mcp() {
     _tool="$1"
-    if printf '%s\n' "${_tool}" | /usr/bin/grep -qE '^mcp__.*slack.*__slack_(send_message|send_message_draft|schedule_message|create_canvas|update_canvas|add_reaction|create_conversation)$'; then
-        printf 'slack-outbound\tSlack で他の人に届く操作です。宛先と本文をユーザーに提示して承認を得てください。\n'
-        return 0
+    _in="$2"
+
+    if printf '%s\n' "${_tool}" | /usr/bin/grep -qE '^mcp__.*slack.*__slack_(send_message|send_message_draft|schedule_message)$'; then
+        # DM 判定: channel_id にユーザー ID（U/W 始まり）や DM チャンネル ID（D 始まり）を
+        # 渡すと本人への直接送信になる。チャンネル ID（C 始まり）は対象外。
+        _chan="$(printf '%s' "${_in}" | /usr/bin/jq -r '.tool_input.channel_id // empty' 2>/dev/null)"
+        if printf '%s\n' "${_chan}" | /usr/bin/grep -qE '^[UWD][A-Z0-9]{4,}$'; then
+            printf 'slack-dm\tSlack の DM は相手に直接届きます。宛先と本文をユーザーに提示して承認を得てください。\n'
+            return 0
+        fi
+        # メンション判定: 本文キー名（message）に依存すると、キーが変わったとき
+        # メンション付きが素通りする＝送信側に倒れる。tool_input 内の全文字列を対象にする。
+        _text="$(printf '%s' "${_in}" | /usr/bin/jq -r '[.tool_input | .. | strings] | join(" ")' 2>/dev/null)"
+        # <@U…>（ユーザー）/ <!here|channel|everyone|subteam…>（一斉呼び出し）/
+        # 素の @xxx（API 経由で通知にならない場合でも、人への呼びかけとして扱う）
+        if printf '%s\n' "${_text}" | /usr/bin/grep -qE '(<@[A-Z0-9]+>|<!(here|channel|everyone|subteam)|(^|[[:space:]([])@[A-Za-z0-9])'; then
+            printf 'slack-mention\tSlack で人にメンションしています。宛先と本文をユーザーに提示して承認を得てください。\n'
+            return 0
+        fi
+        return 1
     fi
+
     if printf '%s\n' "${_tool}" | /usr/bin/grep -qE '^mcp__.*notion.*__notion-create-comment$'; then
         printf 'notion-comment\tNotion のコメントは他の人に通知が飛びます。投稿先と本文をユーザーに確認してください。\n'
         return 0
@@ -141,8 +195,7 @@ fi
 
 case "${tool}" in
     mcp__*)
-        # MCP はツール名だけで判定する（引数の形は各サーバー依存なので見ない）
-        if hit="$(classify_tool "${tool}")"; then
+        if hit="$(classify_mcp "${tool}" "${input}")"; then
             decide "${hit}" "tool=${tool}"
         fi
         exit 0
