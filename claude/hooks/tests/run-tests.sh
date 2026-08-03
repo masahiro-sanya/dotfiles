@@ -179,6 +179,70 @@ assert 0 guard-test-skip.sh "テストファイルへの通常編集は許可" "
 assert 2 guard-test-skip.sh "spec ファイルへの xit はブロック" "$(edit_json "src/foo.spec.ts" "x""it('works', () => {})")"
 assert 0 guard-test-skip.sh "壊れた JSON は fail-open" "{broken json"
 
+echo "== guard-outbound-comms.sh =="
+
+# 承認マーカーは本物（~/.claude/outbound-ok）でなくテスト用に向ける
+export OUTBOUND_OK_MARKER="${TMP_ROOT}/outbound-ok"
+
+# oc_bash <command> : Bash ツールのペイロード
+oc_bash() {
+    /usr/bin/jq -cn --arg cmd "$1" '{tool_name: "Bash", tool_input: {command: $cmd}}'
+}
+
+# oc_mcp <tool_name> : MCP ツールのペイロード（引数は見ないので空）
+oc_mcp() {
+    /usr/bin/jq -cn --arg t "$1" '{tool_name: $t, tool_input: {}}'
+}
+
+# GitHub: レビュー返信・コメント・PR/Issue 作成
+assert 2 guard-outbound-comms.sh "gh pr comment はブロック" "$(oc_bash "gh pr comment 123 --body LGTM")"
+assert 2 guard-outbound-comms.sh "gh pr review はブロック" "$(oc_bash "gh pr review 12 --comment -b fix")"
+assert 2 guard-outbound-comms.sh "gh issue comment はブロック" "$(oc_bash "gh issue comment 5 --body ok")"
+assert 2 guard-outbound-comms.sh "gh pr create はブロック" "$(oc_bash "gh pr create --title x --body y")"
+assert 2 guard-outbound-comms.sh "-R 付きでもブロック" "$(oc_bash "gh -R owner/repo pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "レビュー依頼（--add-reviewer）はブロック" "$(oc_bash "gh pr edit 3 --add-reviewer foo")"
+assert 2 guard-outbound-comms.sh "gh api の replies POST はブロック" "$(oc_bash "gh api repos/o/r/pulls/1/comments/9/replies -X POST -f body=hi")"
+assert 2 guard-outbound-comms.sh "GraphQL の addComment はブロック" "$(oc_bash "gh api graphql -f query='mutation { addComment(input: {}) { id } }'")"
+assert 2 guard-outbound-comms.sh "メール送信はブロック" "$(oc_bash "gogcli.sh gmail send --to a@example.com")"
+
+# 読み取り・無関係コマンドは素通り（誤爆させない）
+assert 0 guard-outbound-comms.sh "gh pr view --json comments は許可" "$(oc_bash "gh pr view 123 --json comments")"
+assert 0 guard-outbound-comms.sh "gh pr diff は許可" "$(oc_bash "gh pr diff 123")"
+assert 0 guard-outbound-comms.sh "gh api の GET は許可" "$(oc_bash "gh api repos/o/r/pulls/1/comments")"
+assert 0 guard-outbound-comms.sh "GraphQL の読み取りクエリは許可（reviews/comments を含んでも）" \
+    "$(oc_bash "gh api graphql -f query='{ repository { pullRequests { reviews { comments } } } }'")"
+assert 0 guard-outbound-comms.sh "コミットメッセージ中の文字列は許可" "$(oc_bash "git commit -m 'reply to review comment'")"
+assert 0 guard-outbound-comms.sh "echo 中の gh pr comment は許可" "$(oc_bash "echo gh pr comment")"
+assert 0 guard-outbound-comms.sh "無関係なコマンドは許可" "$(oc_bash "ls -la")"
+
+# MCP: Slack / Notion の送信系はツール名で判定
+assert 2 guard-outbound-comms.sh "Slack 送信はブロック" "$(oc_mcp "mcp__plugin_slack_slack__slack_send_message")"
+assert 2 guard-outbound-comms.sh "Slack 予約投稿はブロック" "$(oc_mcp "mcp__plugin_slack_slack__slack_schedule_message")"
+assert 2 guard-outbound-comms.sh "Slack リアクションはブロック" "$(oc_mcp "mcp__plugin_slack_slack__slack_add_reaction")"
+assert 2 guard-outbound-comms.sh "Notion コメントはブロック" "$(oc_mcp "mcp__notion__notion-create-comment")"
+assert 0 guard-outbound-comms.sh "Slack 読み取りは許可" "$(oc_mcp "mcp__plugin_slack_slack__slack_read_channel")"
+assert 0 guard-outbound-comms.sh "Slack ユーザー検索は許可" "$(oc_mcp "mcp__plugin_slack_slack__slack_search_users")"
+assert 0 guard-outbound-comms.sh "Notion 取得は許可" "$(oc_mcp "mcp__notion__notion-fetch")"
+assert 0 guard-outbound-comms.sh "壊れた JSON は fail-open" "{broken json"
+
+# 承認マーカー: 1回で消費され、期限切れは無効
+touch "${OUTBOUND_OK_MARKER}"
+assert 0 guard-outbound-comms.sh "承認マーカーがあれば通す" "$(oc_bash "gh pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "マーカーは1回で消費される（2回目はブロック）" "$(oc_bash "gh pr comment 1 --body x")"
+touch "${OUTBOUND_OK_MARKER}"
+assert 0 guard-outbound-comms.sh "承認マーカーは MCP 送信にも効く" "$(oc_mcp "mcp__plugin_slack_slack__slack_send_message")"
+
+# 11分前のマーカー（TTL 10分超）は無効。BSD(macOS) / GNU(CI) 両対応で mtime を戻す
+touch "${OUTBOUND_OK_MARKER}"
+touch -t "$(date -v-11M +%Y%m%d%H%M 2>/dev/null || date -d '11 minutes ago' +%Y%m%d%H%M 2>/dev/null || date +%Y%m%d%H%M)" \
+    "${OUTBOUND_OK_MARKER}" 2>/dev/null
+assert 2 guard-outbound-comms.sh "期限切れマーカーは無効" "$(oc_bash "gh pr comment 1 --body x")"
+if [ ! -f "${OUTBOUND_OK_MARKER}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 期限切れマーカーは掃除される"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 期限切れマーカーが残置された"
+fi
+
 echo "== guard-hits テレメトリ =="
 
 # ブロック時に GUARD_HITS_LOG へ 1 行記録されることを確認する
@@ -217,6 +281,15 @@ check_not_logged "command rm 許可は記録しない" guard-bash-command.sh "$(
 # レビューゲート: 通過記録を消して未レビュー状態に戻してから確認する
 command rm -f "${gated_git_dir}/claude-reviewed-sha"
 check_logged "レビューゲートブロックを記録する" "review-gate-blocked" guard-review-push.sh "$(bash_json "git push")" "${REPO_GATED}"
+
+check_logged "対人送信ブロックを記録する" "gh-pr-issue-write-blocked" guard-outbound-comms.sh "$(oc_bash "gh pr comment 1 --body x")"
+check_logged "Slack 送信ブロックを記録する" "slack-outbound-blocked" guard-outbound-comms.sh "$(oc_mcp "mcp__plugin_slack_slack__slack_send_message")"
+check_not_logged "gh pr view は記録しない" guard-outbound-comms.sh "$(oc_bash "gh pr view 1")"
+
+# 承認バイパスも監査できるよう記録する（乱用を後から追えるようにする）
+command rm -f "${GUARD_HITS_LOG}"
+touch "${OUTBOUND_OK_MARKER}"
+check_logged "承認バイパスを記録する" "gh-pr-issue-write-approved" guard-outbound-comms.sh "$(oc_bash "gh pr comment 1 --body x")"
 
 check_logged "test-skip ブロックを記録する" "test-skip-blocked" guard-test-skip.sh "$(edit_json "foo_test.go" "t.Sk""ip(\"x\")")"
 

@@ -55,6 +55,21 @@
             "type": "command",
             "command": "~/.claude/hooks/bash-guard.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/guard-outbound-comms.sh",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*(slack|notion).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/guard-outbound-comms.sh",
+            "timeout": 5
           }
         ]
       },
