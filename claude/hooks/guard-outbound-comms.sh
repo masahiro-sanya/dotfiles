@@ -55,7 +55,14 @@ OUTBOUND_OK_TTL="${OUTBOUND_OK_TTL:-600}"
 consume_marker() {
     [ -f "${OUTBOUND_OK_MARKER}" ] || return 1
     _now="$(date +%s 2>/dev/null || echo 0)"
-    _mt="$(/usr/bin/stat -f %m "${OUTBOUND_OK_MARKER}" 2>/dev/null || /usr/bin/stat -c %Y "${OUTBOUND_OK_MARKER}" 2>/dev/null || echo 0)"
+    # mtime の取り方が BSD(macOS) と GNU(Linux) で違う。GNU stat は -f を
+    # --file-system と解釈して %m にマウントポイント（"/" 等）を返し、exit 0 で
+    # 成功してしまうので、`||` のフォールバックだけでは拾えない。
+    # 数字が返ったかで判定し、駄目ならもう一方を試す。
+    _mt="$(/usr/bin/stat -f %m "${OUTBOUND_OK_MARKER}" 2>/dev/null || true)"
+    case "${_mt}" in
+        ''|*[!0-9]*) _mt="$(/usr/bin/stat -c %Y "${OUTBOUND_OK_MARKER}" 2>/dev/null || echo 0)" ;;
+    esac
     /bin/rm -f "${OUTBOUND_OK_MARKER}" 2>/dev/null || true
     case "${_now}${_mt}" in *[!0-9]*|'') return 1 ;; esac
     [ "${_now}" -ge "${_mt}" ] || return 1
