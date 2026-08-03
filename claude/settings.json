@@ -297,7 +297,8 @@
     "offboarding-checker@light-skills": true,
     "check-release-cross-repo@light-skills": true,
     "lhs@light-skills": true,
-    "collect-feed@light-skills": true
+    "collect-feed@light-skills": true,
+    "check-release-full@light-skills": true
   },
   "extraKnownMarketplaces": {
     "light-skills": {
