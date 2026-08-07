@@ -13,6 +13,10 @@
 #   - 読み取り系すべて（gh pr view / diff、slack_read_*、notion-fetch 等）
 #   - gh pr create / gh issue create（レビュー依頼フラグを伴わないもの）
 #   - メンションなしの Slack チャンネル投稿・リアクション・canvas
+#   - gh pr/issue comment のうち、本文が bot 宛だけのもの（/review 等のスラッシュコマンド、
+#     @claude / @gemini 等の bot メンション）。人に届く呼びかけではないため。
+#     人へのメンションが 1 つでも混ざれば従来どおりブロックする。
+#     gh pr review（PR 作者宛のレビュー提出）と gh api 経由のレビュー返信は人宛なので例外にしない。
 #
 # 承認後の送り方（ユーザーの承認を得たときだけ）:
 #   touch ~/.claude/outbound-ok   # 承認マーカー（10分有効・1回で消費）
@@ -92,6 +96,63 @@ strip_heredocs() {
     done
 }
 
+# ---- GitHub コメントの bot 宛判定 ----
+# レビュー bot を呼ぶだけのコメント（/review、@claude 等）は人への呼びかけではないので通す。
+# 許可するハンドルはここだけで定義する。テスト用に env で差し替え可。
+OUTBOUND_BOT_HANDLES="${OUTBOUND_BOT_HANDLES:-claude|claude-bot|gemini|gemini-code-assist|codex|copilot|github-actions|coderabbitai|cursor|devin-ai-integration}"
+
+# コマンド文字列から --body / -b の値を取り出す。中身を読めないとき（--body-file、
+# コマンド置換、フラグ自体が無い＝エディタ起動）は return 1 で「判定不能」を返し、
+# 呼び出し側はブロックに倒す。
+gh_comment_body() {
+    _c="$1"
+    # ファイル渡し（--body-file / -F）は中身が見えない
+    printf '%s\n' "${_c}" | /usr/bin/grep -qE '(--body-file|(^|[[:space:]])-F([[:space:]]|=))' && return 1
+    # 本文が 2 つ以上（&& で複数コメントを連結など）だと先頭しか見えず、後続を見逃す
+    [ "$(printf '%s\n' "${_c}" | /usr/bin/grep -oE '(^|[[:space:]])(--body|-b)([[:space:]]|=)' | /usr/bin/wc -l | /usr/bin/tr -d ' ')" = "1" ] || return 1
+    # 引用は 'x' → "x" → 素のトークン の順に試す。負の文字クラスは改行も食うので複数行本文も取れる。
+    # 末尾に空白/行末を要求するのが肝: これが無いと "@claude "'cc @alice' のような
+    # クォート連結やエスケープ引用符で本文の前半だけを抜き出してしまい、後半の人宛
+    # メンションを見落とす（＝バイパスされる）。読み切れない形は下の return 1 に落とす
+    _re_sq="(--body|-b)[[:space:]]*=?[[:space:]]*'([^']*)'([[:space:]]|$)"
+    _re_dq="(--body|-b)[[:space:]]*=?[[:space:]]*\"([^\"]*)\"([[:space:]]|$)"
+    _re_bare="(--body|-b)[[:space:]]*=?[[:space:]]*([^[:space:]'\"]+)([[:space:]]|$)"
+    if [[ "${_c}" =~ ${_re_sq} ]]; then
+        _body="${BASH_REMATCH[2]}"
+    elif [[ "${_c}" =~ ${_re_dq} ]]; then
+        _body="${BASH_REMATCH[2]}"
+    elif [[ "${_c}" =~ ${_re_bare} ]]; then
+        _body="${BASH_REMATCH[2]}"
+    else
+        return 1
+    fi
+    # 展開結果が実行時にしか決まらないものは中身を判定できない。
+    # $( ${ だけでなく素の $VAR も対象（展開後に人宛メンションが混ざりうる）
+    case "${_body}" in *'$'*|*'`'*) return 1 ;; esac
+    printf '%s' "${_body}"
+    return 0
+}
+
+# 本文が bot 宛だけなら return 0。人へのメンションが混ざる／合図が無いときは return 1。
+gh_body_is_bot_only() {
+    _b="$1"
+    [ -n "${_b}" ] || return 1
+    # 本文中の @ハンドルを全部拾う。直前がメールアドレスの一部（英数.+-）なら誤爆させない
+    _mentions="$(printf '%s\n' "${_b}" \
+        | /usr/bin/grep -oE '(^|[^A-Za-z0-9_.+-])@[A-Za-z0-9][A-Za-z0-9-]*' \
+        | /usr/bin/sed 's/.*@//')"
+    # 1 つでも許可リスト外があれば人宛として扱う
+    for _m in ${_mentions}; do
+        printf '%s' "${_m}" | /usr/bin/grep -qiE "^(${OUTBOUND_BOT_HANDLES})$" || return 1
+    done
+    [ -n "${_mentions}" ] && return 0
+    # メンションが無い場合は、先頭行がスラッシュコマンド（/review 等）のときだけ bot 宛とみなす。
+    # 素の本文（"LGTM" 等）は人が読むコメントなので通さない
+    printf '%s\n' "${_b}" | /usr/bin/sed -n '/[^[:space:]]/{p;q;}' \
+        | /usr/bin/grep -qE '^[[:space:]]*/[A-Za-z][A-Za-z0-9_-]*([[:space:]]|$)' && return 0
+    return 1
+}
+
 # ---- 判定: コマンド文字列 ----
 # 対人送信なら "分類<TAB>理由" を stdout に出して return 0、非該当は return 1。
 classify_command() {
@@ -102,11 +163,22 @@ classify_command() {
     _cmd_pos='(^|[|;&(]|\$\(|`)[[:space:]]*'
     _gh_opts='([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?'
 
-    # gh pr comment / gh pr review / gh issue comment（＝人への返信）
+    # gh pr comment / gh issue comment（＝人が読むコメント）
+    # 本文が bot 宛だけ（/review 等のスラッシュコマンド、@claude/@gemini 等の bot メンション）なら
+    # 人への呼びかけではないので通す。本文を読めないときは判定不能＝ブロックに倒す
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+comment([[:space:]]|$)"; then
+        # 通すときも return せず後続の判定を続ける（&& で他の対人操作を連結されうるため）
+        if ! { _body="$(gh_comment_body "${_cmd}")" && gh_body_is_bot_only "${_body}"; }; then
+            printf 'gh-pr-issue-write\tレビューコメント・返信です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
+            return 0
+        fi
+    fi
+
+    # gh pr review は PR 作者宛のレビュー提出なので bot 宛の例外を作らない
     # gh pr create / gh issue create は自分の成果物の提出で、レビュー依頼フラグが
     # 付かない限り特定の人への呼びかけではないため通す（下の --add-reviewer 判定で拾う）
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+(comment|review)([[:space:]]|$)"; then
-        printf 'gh-pr-issue-write\tレビューコメント・返信です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+pr[[:space:]]+review([[:space:]]|$)"; then
+        printf 'gh-pr-issue-write\tレビュー提出です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
         return 0
     fi
 

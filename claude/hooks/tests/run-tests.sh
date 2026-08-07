@@ -223,6 +223,32 @@ assert 0 guard-outbound-comms.sh "コミットメッセージ中の文字列は�
 assert 0 guard-outbound-comms.sh "echo 中の gh pr comment は許可" "$(oc_bash "echo gh pr comment")"
 assert 0 guard-outbound-comms.sh "無関係なコマンドは許可" "$(oc_bash "ls -la")"
 
+# GitHub コメントのうち bot 宛だけのものは許可（人への呼びかけではないため）
+assert 0 guard-outbound-comms.sh "スラッシュコマンドだけのコメントは許可" "$(oc_bash "gh pr comment 123 --body '/review'")"
+assert 0 guard-outbound-comms.sh "bot メンションだけのコメントは許可" "$(oc_bash "gh pr comment 123 --body '@claude このPRをレビューして'")"
+assert 0 guard-outbound-comms.sh "issue でも bot 宛なら許可" "$(oc_bash "gh issue comment 5 --body '@gemini-code-assist review'")"
+assert 0 guard-outbound-comms.sh "-R 付きでも bot 宛なら許可" "$(oc_bash "gh -R owner/repo pr comment 1 --body '@claude review'")"
+
+# 人が絡むものは従来どおりブロック
+assert 2 guard-outbound-comms.sh "人へのメンションはブロック" "$(oc_bash "gh pr comment 1 --body '@alice 見てもらえますか'")"
+assert 2 guard-outbound-comms.sh "bot と人が混ざればブロック" "$(oc_bash "gh pr comment 1 --body '@claude review cc @alice'")"
+assert 2 guard-outbound-comms.sh "メンションなしの素の本文はブロック" "$(oc_bash "gh pr comment 1 --body 'ここは直しました'")"
+assert 2 guard-outbound-comms.sh "gh pr review は bot 宛でもブロック" "$(oc_bash "gh pr review 12 --comment --body '@claude review'")"
+
+# 本文を読めないものは判定不能＝ブロックに倒す
+assert 2 guard-outbound-comms.sh "--body-file はブロック" "$(oc_bash "gh pr comment 1 --body-file /tmp/body.md")"
+assert 2 guard-outbound-comms.sh "コマンド置換の本文はブロック" "$(oc_bash 'gh pr comment 1 --body "$(cat body.md)"')"
+assert 2 guard-outbound-comms.sh "素の変数展開を含む本文はブロック" "$(oc_bash 'gh pr comment 1 --body "@claude $NOTE"')"
+assert 2 guard-outbound-comms.sh "クォート連結で人宛を隠しても抽出せずブロック" \
+    "$(oc_bash "gh pr comment 1 --body \"@claude \"'cc @alice よろしく'")"
+assert 2 guard-outbound-comms.sh "エスケープ引用符を含む本文はブロック" \
+    "$(oc_bash 'gh pr comment 1 --body "@claude \"@alice にも共有\""')"
+assert 2 guard-outbound-comms.sh "本文フラグなし（エディタ起動）はブロック" "$(oc_bash "gh pr comment 1")"
+assert 2 guard-outbound-comms.sh "コメントを連結したら人宛が混ざりうるのでブロック" \
+    "$(oc_bash "gh pr comment 1 --body '/review' && gh pr comment 2 --body '@alice hi'")"
+assert 2 guard-outbound-comms.sh "bot 宛コメントに他の対人操作を連結してもブロック" \
+    "$(oc_bash "gh pr comment 1 --body '/review' ; gh pr edit 2 --add-reviewer alice")"
+
 # ヒアドキュメント本文（コミットメッセージ・PR 本文）はコマンドではないので判定対象外。
 # 本文中の gh 文字列で実際にコミットがブロックされた回帰テスト
 heredoc_msg="git commit -F - <<'MSGEOF'
