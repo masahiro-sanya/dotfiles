@@ -18,6 +18,7 @@ ROOT = Path.home() / ".claude" / "projects"
 CUSTOM = {
     "investigator", "gcp-log-investigator", "palmu-api-researcher",
     "verify-runner", "pr-review-triage",
+    "impl-runner", "review-runner", "feed-collector",
 }
 # Claude Code 組み込み
 BUILTIN = {
