@@ -58,3 +58,6 @@ editor/vscode/workspaceStorage/
 
 # Project-local Claude Code settings
 .claude/
+
+# 対人送信ガードの許可リスト実値（社内のチャンネル ID を公開リポに載せない）
+claude/outbound-allowlist.env

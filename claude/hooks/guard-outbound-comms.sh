@@ -17,6 +17,8 @@
 #     @claude / @gemini 等の bot メンション）。人に届く呼びかけではないため。
 #     人へのメンションが 1 つでも混ざれば従来どおりブロックする。
 #     gh pr review（PR 作者宛のレビュー提出）と gh api 経由のレビュー返信は人宛なので例外にしない。
+#   - Slack の一斉呼び出しのうち、許可チャンネル × 許可メンション形の組に収まるもの
+#     （下の OUTBOUND_SLACK_MENTION_ALLOW_* を参照。既定は空＝全部ブロック）。
 #
 # 承認後の送り方（ユーザーの承認を得たときだけ）:
 #   touch ~/.claude/outbound-ok   # 承認マーカー（10分有効・1回で消費）
@@ -216,6 +218,114 @@ classify_command() {
     return 1
 }
 
+# ---- Slack メンションの許可リスト ----
+# 障害通知のように「このチャンネルで、この呼びかけ先を叩く」ことが決まっている用途だけを
+# 例外にする。既定は両方とも空で、そのときは従来どおりメンションを全部ブロックする。
+#   CHANNELS: 許可するチャンネル ID を空白区切り（例 "C0123ABCD C0456EFGH"）
+#   MENTIONS: 許可する呼びかけ先を空白区切り（here / channel / everyone / subteam^S0123ABCD）
+# 個人宛（<@U…>）と素の @名前 は許可リストに載せられない（載せても無視する）。
+# 人を名指しする発信は承認マーカー経由に残すため。
+#
+# 実値は追跡しないローカルファイルに置く。チャンネル ID とユーザーグループ ID は
+# 社内の情報で、dotfiles は公開リポなので設定ファイルに直接書けない。
+# 置き場: ~/.claude/outbound-allowlist.env（雛形は claude/outbound-allowlist.env.sample）
+# ファイルが無ければ空のまま＝全部ブロックなので、未配置のマシンでは安全側に倒れる。
+OUTBOUND_ALLOWLIST_FILE="${OUTBOUND_ALLOWLIST_FILE:-${HOME}/.claude/outbound-allowlist.env}"
+
+# ファイルから KEY の値を 1 つ取り出す。source しないのは、ガード自身が任意コードを
+# 実行する経路を持たないようにするため（設定ファイルが乗っ取られてもガードは動く）。
+read_allowlist_key() {
+    [ -r "${OUTBOUND_ALLOWLIST_FILE}" ] || return 0
+    /usr/bin/sed -n -E "s/^[[:space:]]*$1=[\"']?([^\"']*)[\"']?[[:space:]]*\$/\1/p" \
+        "${OUTBOUND_ALLOWLIST_FILE}" 2>/dev/null | /usr/bin/tail -1
+}
+
+# 環境変数が入っていればそちらを優先する（テストが値を差し替えられるように）。
+# 読むのは Slack のメンション判定に入ったときだけ。このフックは全 Bash 呼び出しで
+# 走るので、関係ない呼び出しでファイルを開かないようにしている。
+OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="${OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS:-}"
+OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="${OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS:-}"
+load_mention_allowlist() {
+    [ -n "${OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS}" ] \
+        || OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="$(read_allowlist_key OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS)"
+    [ -n "${OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS}" ] \
+        || OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="$(read_allowlist_key OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS)"
+}
+
+# 本文中の呼びかけを比較用トークンに正規化して 1 行ずつ返す。
+# <@U…> は user、素の @名前 は plain に潰す（どちらも許可リストに載らない＝必ずブロック）。
+# 正規化できない形（caret のない <!subteam>、閉じていない <@U… 等）は unknown に落とす。
+# これも許可リストに載らないので、判定不能はブロックへ倒れる。
+#
+# 3 段構えにしているのは、タグの直後に空白なしで続く素の @名前（<!here>@masahiro）を
+# 取りこぼさないため。1 パスの grep -oE だとタグを食った直後は行頭でも空白の後でもなく、
+# 素の @名前 が 1 つも拾われないまま「検知した分は全部許可リスト内」と誤判定して通ってしまう。
+#
+# タグとみなすのは <@ か <! で始まり、間に < も > も挟まずに > で閉じたものだけ。
+# 「閾値 < 5 のとき @masahiro へ」のような本文の不等号までタグ扱いして消すと、
+# その間に挟まれた個人宛が丸ごと検知から消える（ガード全体が無効化される）。
+slack_mention_tokens() {
+    # 1) 構造化タグをタグ丸ごと（表示名 |@oncall まで）取り出して正規化する
+    printf '%s\n' "$1" \
+        | /usr/bin/grep -oE '<[@!][^>]*>' \
+        | /usr/bin/sed -E \
+            -e 's/^<@[A-Z0-9]+(\|[^>]*)?>$/user/' \
+            -e 's/^<!subteam\^([A-Za-z0-9]+)(\|[^>]*)?>$/subteam^\1/' \
+            -e 's/^<!(here|channel|everyone)(\|[^>]*)?>$/\1/' \
+            -e 's/^<[@!].*>$/unknown/'
+    # 2) 閉じ括弧のない書きかけのタグ（<!here 障害です）も呼びかけとみなす。
+    #    正規化できない＝許可リストと突き合わせられないので unknown に落としてブロックへ倒す
+    printf '%s\n' "$1" \
+        | /usr/bin/sed -E 's/<[@!][^<>]*>//g' \
+        | /usr/bin/grep -oE '<[@!]' \
+        | /usr/bin/sed -E 's/^.*$/unknown/'
+    # 3) タグを空白へ潰した残りから素の @名前 を拾う。@ の直前が英数と ._- のときは
+    #    メールアドレスのローカル部とみなして拾わない（a@example.com を誤爆させない）。
+    #    @ の後ろは英数に限らない。「@田中さん」のような日本語の呼びかけも対象にするため、
+    #    空白と記号だけを除く（_ は Slack の表示名に使われるので拾う側に残す）
+    printf '%s\n' "$1" \
+        | /usr/bin/sed -E 's/<[@!][^<>]*>/ /g' \
+        | /usr/bin/grep -oE '(^|[^A-Za-z0-9._-])@([^[:space:][:punct:]]|_)' \
+        | /usr/bin/sed -E 's/^.*@.*$/plain/'
+}
+
+# 許可リストに収まるなら return 0。$1=channel_id $2=slack_mention_tokens の出力
+# 本文ではなくトークンを受け取るのは、呼び出し側の検知とここの判定を同じ 1 回の
+# 正規化結果で行い、「検知はしたがトークン化できず素通り」という食い違いを作らないため。
+slack_mention_allowed() {
+    _sma_ch="$1"
+    _sma_toks="$2"
+    load_mention_allowlist
+    [ -n "${OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS}" ] || return 1
+    [ -n "${OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS}" ] || return 1
+    [ -n "${_sma_toks}" ] || return 1
+
+    _sma_chan_ok=1
+    for _sma_c in ${OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS}; do
+        # チャンネル ID の形をしていない項目は無視する。設定ミスや、未クォート展開での
+        # glob 展開でファイル名が紛れ込んでも許可側に倒れないようにするため
+        printf '%s' "${_sma_c}" | /usr/bin/grep -qE '^C[A-Z0-9]{4,}$' || continue
+        [ "${_sma_c}" = "${_sma_ch}" ] && _sma_chan_ok=0
+    done
+    [ "${_sma_chan_ok}" = 0 ] || return 1
+
+    # 1 つでも許可リスト外があれば全体をブロックする（@here と個人宛の混在を通さない）
+    for _sma_t in ${_sma_toks}; do
+        _sma_tok_ok=1
+        for _sma_a in ${OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS}; do
+            # 許可リストに user / plain / unknown 等を書かれても効かせない
+            printf '%s' "${_sma_a}" \
+                | /usr/bin/grep -qE '^(here|channel|everyone|subteam\^[A-Za-z0-9]+)$' || continue
+            [ "${_sma_t}" = "${_sma_a}" ] && _sma_tok_ok=0
+        done
+        [ "${_sma_tok_ok}" = 0 ] || return 1
+    done
+
+    # 緩めた分がどこで使われたかを追えるように、通した回も記録する
+    log_hit 'slack-mention-allowlisted' "channel=${_sma_ch}"
+    return 0
+}
+
 # ---- 判定: MCP ツール ----
 # plugin 名を含むプレフィックスは環境で変わりうるので mcp__.*<service>.*__ で受ける。
 # $1=ツール名 $2=hook への入力 JSON 全体
@@ -235,8 +345,13 @@ classify_mcp() {
         # メンション付きが素通りする＝送信側に倒れる。tool_input 内の全文字列を対象にする。
         _text="$(printf '%s' "${_in}" | /usr/bin/jq -r '[.tool_input | .. | strings] | join(" ")' 2>/dev/null)"
         # <@U…>（ユーザー）/ <!here|channel|everyone|subteam…>（一斉呼び出し）/
-        # 素の @xxx（API 経由で通知にならない場合でも、人への呼びかけとして扱う）
-        if printf '%s\n' "${_text}" | /usr/bin/grep -qE '(<@[A-Z0-9]+>|<!(here|channel|everyone|subteam)|(^|[[:space:]([])@[A-Za-z0-9])'; then
+        # 素の @xxx（API 経由で通知にならない場合でも、人への呼びかけとして扱う）を
+        # トークン化し、1 つでも拾えたらメンションありとみなす。検知と許可判定で
+        # 別の正規表現を持たないこと自体が、片方だけ取りこぼす事故を防いでいる。
+        _toks="$(slack_mention_tokens "${_text}")"
+        if [ -n "${_toks}" ]; then
+            # 許可チャンネル × 許可メンション形の組に収まるものだけ素通しにする
+            slack_mention_allowed "${_chan}" "${_toks}" && return 1
             printf 'slack-mention\tSlack で人にメンションしています。宛先と本文をユーザーに提示して承認を得てください。\n'
             return 0
         fi

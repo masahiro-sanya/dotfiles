@@ -20,9 +20,18 @@ for _v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do
 done
 unset _v
 
+# Slack メンション許可リストを継いだまま走ると、「既定は空＝全部ブロック」を前提にした
+# テストが、実チャンネル ID と衝突した瞬間に黙って通過側へ倒れる。各テストが自前で
+# export するので、ここでは必ず空から始める。
+unset OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS
+
 HOOKS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
 trap 'command rm -rf "${TMP_ROOT}"' EXIT
+
+# 同じ理由で、許可リストの実値ファイルも本物（~/.claude/outbound-allowlist.env）を見せない。
+# 存在しないパスを既定にして「ファイル無し＝全部ブロック」から始める。
+export OUTBOUND_ALLOWLIST_FILE="${TMP_ROOT}/no-such-allowlist.env"
 
 # ブロック発火テレメトリのログを本物（~/.claude/guard-hits.log）でなくテスト用に向ける
 export GUARD_HITS_LOG="${TMP_ROOT}/guard-hits.log"
@@ -281,6 +290,14 @@ assert 2 guard-outbound-comms.sh "@here はブロック" "$(oc_slack "${SLACK_SE
 assert 2 guard-outbound-comms.sh "@channel はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "<!channel> 障害です")"
 assert 2 guard-outbound-comms.sh "ユーザーグループ（subteam）はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "<!subteam^S123|@dev> 見てください")"
 assert 2 guard-outbound-comms.sh "素の @名前 もブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "@masahiro 確認お願いします")"
+# 本文中の不等号を Slack タグと誤認して、その間の個人宛ごと消してしまわないこと
+assert 2 guard-outbound-comms.sh "不等号を挟んだ本文でも素の @名前 はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "システム < 閾値 の話です @masahiro 見て > ください")"
+assert 2 guard-outbound-comms.sh "不等号で囲まれた素の @名前 もブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "障害対応 < @masahiro > お願いします")"
+assert 2 guard-outbound-comms.sh "アロー記法を含む本文でも個人宛はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "A -> B の順です <@U04BS3XV5T8> 確認を")"
+# 閉じ括弧のない書きかけのタグも呼びかけとみなしてブロックする（判定不能はブロックへ倒す）
+assert 2 guard-outbound-comms.sh "閉じ括弧のない <!here はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "<!here 障害です、確認をお願いします")"
+assert 2 guard-outbound-comms.sh "閉じ括弧のない <!subteam はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "<!subteam^S0ONCALL 確認をお願いします")"
+assert 0 guard-outbound-comms.sh "不等号だけの本文は誤爆させない" "$(oc_slack "${SLACK_SEND}" "C012345" "レイテンシ < 200ms を維持、エラー率 > 1% で警報")"
 assert 2 guard-outbound-comms.sh "DM 宛（ユーザーID）はブロック" "$(oc_slack "${SLACK_SEND}" "U04BS3XV5T8" "メンションなしの本文")"
 assert 2 guard-outbound-comms.sh "DM チャンネル（D始まり）はブロック" "$(oc_slack "${SLACK_SEND}" "D0123456" "メンションなしの本文")"
 assert 2 guard-outbound-comms.sh "予約投稿もメンションならブロック" \
@@ -297,6 +314,68 @@ assert 0 guard-outbound-comms.sh "canvas 作成は許可" "$(oc_mcp "mcp__plugin
 assert 0 guard-outbound-comms.sh "Slack 読み取りは許可" "$(oc_mcp "mcp__plugin_slack_slack__slack_read_channel")"
 assert 0 guard-outbound-comms.sh "Slack ユーザー検索は許可" "$(oc_mcp "mcp__plugin_slack_slack__slack_search_users")"
 assert 0 guard-outbound-comms.sh "Notion 取得は許可" "$(oc_mcp "mcp__notion__notion-fetch")"
+
+# Slack メンション許可リスト: 許可チャンネル × 許可メンション形の組だけ通る
+export OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="C0INCIDENT C0SECOND"
+export OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="here subteam^S0ONCALL"
+assert 0 guard-outbound-comms.sh "許可チャンネルの @here は通す" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> 5xx率が閾値超えです")"
+assert 0 guard-outbound-comms.sh "許可したユーザーグループは通す" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!subteam^S0ONCALL|@oncall> 確認願います")"
+assert 2 guard-outbound-comms.sh "許可外チャンネルの @here はブロック" "$(oc_slack "${SLACK_SEND}" "C012345" "<!here> 告知")"
+assert 2 guard-outbound-comms.sh "許可外のメンション形（@channel）はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!channel> 告知")"
+assert 2 guard-outbound-comms.sh "許可外のユーザーグループはブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!subteam^S0OTHER|@other> 確認")"
+assert 2 guard-outbound-comms.sh "許可メンションに個人宛が混ざればブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> と <@U04BS3XV5T8> 確認願います")"
+assert 2 guard-outbound-comms.sh "許可メンションに素の @名前 が混ざればブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> @masahiro も確認")"
+assert 2 guard-outbound-comms.sh "許可チャンネルでも個人宛だけならブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<@U04BS3XV5T8> 確認願います")"
+# タグの直後に空白なしで続く個人宛。ここを拾えないと「検知した分は全部許可リスト内」と
+# 誤判定して通る（許可リスト導入時に実際に開いていた穴）
+assert 2 guard-outbound-comms.sh "許可タグの直後に空白なしで続く素の @名前 はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here>@masahiro 確認して")"
+assert 2 guard-outbound-comms.sh "許可タグの直後・句読点の後の素の @名前 はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!subteam^S0ONCALL|@oncall>緊急:@masahiro 対応して")"
+assert 2 guard-outbound-comms.sh "許可タグの直後に空白なしで続く個人宛はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here><@U04BS3XV5T8>確認して")"
+assert 2 guard-outbound-comms.sh "日本語に直付けした素の @名前 はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> 対応者@masahiro です")"
+assert 2 guard-outbound-comms.sh "日本語の表示名への素の @ 呼びかけもブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here>@田中さん 確認して")"
+# 形が壊れたタグは正規化できない＝許可リストと突き合わせられないのでブロックに倒す
+assert 2 guard-outbound-comms.sh "caret のない <!subteam> はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!subteam> 確認")"
+assert 2 guard-outbound-comms.sh "閉じていない <@U… はブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<@U04BS3XV5T8 確認")"
+# 許可タグの表示名部分（|@oncall）を素の @名前 と誤認しない
+assert 0 guard-outbound-comms.sh "許可したユーザーグループは表示名付きでも通す" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!subteam^S0ONCALL|@oncall>至急ご確認ください")"
+assert 0 guard-outbound-comms.sh "許可チャンネルの本文中メールアドレスは誤爆させない" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> 連絡先は a@example.com です")"
+assert 2 guard-outbound-comms.sh "許可チャンネルでも DM 宛はブロック" "$(oc_slack "${SLACK_SEND}" "U04BS3XV5T8" "<!here> 確認")"
+assert 0 guard-outbound-comms.sh "許可チャンネルのメンションなし投稿は従来どおり通る" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "復旧しました")"
+# 許可リストに user / plain を書いても個人宛は通さない
+export OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="user plain"
+assert 2 guard-outbound-comms.sh "許可リストに user と書いても個人宛は通さない" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<@U04BS3XV5T8> 確認")"
+unset OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS
+assert 2 guard-outbound-comms.sh "許可リストが空なら従来どおり全部ブロック" "$(oc_slack "${SLACK_SEND}" "C0INCIDENT" "<!here> 告知")"
+
+# 許可リストの実値はローカルファイルから読む（社内 ID を公開リポに置かないため）
+ALLOWLIST_FILE_ORIG="${OUTBOUND_ALLOWLIST_FILE}"
+export OUTBOUND_ALLOWLIST_FILE="${TMP_ROOT}/allowlist.env"
+cat > "${OUTBOUND_ALLOWLIST_FILE}" <<'ALLOWEOF'
+# コメント行は無視する
+OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="C0FROMFILE C0SECOND"
+OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="subteam^S0ONCALL"
+ALLOWEOF
+assert 0 guard-outbound-comms.sh "ファイルの許可チャンネル×許可グループは通す" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL> 5xx 急増")"
+assert 2 guard-outbound-comms.sh "ファイルにない チャンネルはブロック" "$(oc_slack "${SLACK_SEND}" "C0OTHER" "<!subteam^S0ONCALL> 告知")"
+assert 2 guard-outbound-comms.sh "ファイル許可でも @here は載っていないのでブロック" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!here> 告知")"
+assert 2 guard-outbound-comms.sh "ファイル許可でも個人宛が混ざればブロック" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL> <@U04BS3XV5T8> 確認")"
+assert 2 guard-outbound-comms.sh "ファイル許可でも不等号に隠した個人宛はブロック" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL|@oncall> 障害対応 < @masahiro > お願いします")"
+# 環境変数はファイルより優先する（テストや一時的な差し替えのため）
+export OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="C0ENVONLY"
+export OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="subteam^S0ONCALL"
+assert 2 guard-outbound-comms.sh "環境変数がファイルを上書きする（ファイル側のIDは無効）" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL> 告知")"
+assert 0 guard-outbound-comms.sh "環境変数側のチャンネルは通る" "$(oc_slack "${SLACK_SEND}" "C0ENVONLY" "<!subteam^S0ONCALL> 告知")"
+unset OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS
+# チャンネル ID の形をしていない項目は無視する（glob 展開や設定ミスで通過側へ倒れない）
+cat > "${OUTBOUND_ALLOWLIST_FILE}" <<'ALLOWEOF'
+OUTBOUND_SLACK_MENTION_ALLOW_CHANNELS="* D0123456 U04BS3XV5T8"
+OUTBOUND_SLACK_MENTION_ALLOW_MENTIONS="subteam^S0ONCALL"
+ALLOWEOF
+assert 2 guard-outbound-comms.sh "許可リストの * はチャンネルとして効かない" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL> 告知")"
+assert 2 guard-outbound-comms.sh "許可リストに DM チャンネルを書いても効かない" "$(oc_slack "${SLACK_SEND}" "D0123456" "<!subteam^S0ONCALL> 告知")"
+export OUTBOUND_ALLOWLIST_FILE="${ALLOWLIST_FILE_ORIG}"
+assert 2 guard-outbound-comms.sh "許可リストのファイルが無ければ全部ブロック" "$(oc_slack "${SLACK_SEND}" "C0FROMFILE" "<!subteam^S0ONCALL> 告知")"
+
 assert 0 guard-outbound-comms.sh "壊れた JSON は fail-open" "{broken json"
 
 # 承認マーカー: 1回で消費され、期限切れは無効
