@@ -28,6 +28,11 @@
 #   未接続で収集できなかった。再認証は対話でしかできない（headless では
 #   自己復旧できない）ので、未接続と分かった時点でリトライを空振りさせずに
 #   打ち切り、再認証が要る旨を通知する
+# - API 到達性を確かめてから claude を起動する（2026-08-07 追加）: 7/30 は ENOTFOUND
+#   （ネットワーク断）のまま 3 回試行して全滅した。断のまま claude を起動しても
+#   試行を燃やすだけなので、起動前に到達を確認し、不達なら復旧を待ってから試行する。
+#   MCP プリチェックより先に行う（断のまま mcp list を叩くと全サーバー接続失敗になり、
+#   「再認証が必要」と誤診して ABORT してしまうため。7/31 がこの形だった疑いがある）
 # - macOS 標準 bash 3.2 互換で書く
 
 set -u
@@ -44,6 +49,12 @@ RETRY_WAIT_SECONDS="60 180"
 # 実測では数秒で返るので、待たされたら早めに打ち切ってよい（判定不能でも収集は止めない）
 REQUIRED_MCP="notion"
 MCP_CHECK_TIMEOUT=60
+
+# API 到達性チェック: 何らかの HTTP 応答が返れば到達とみなす（ステータスコードは問わない）。
+# 不達なら NETWORK_POLL_INTERVAL 秒おきに再確認し、NETWORK_WAIT_MAX 秒まで復旧を待つ
+API_CHECK_URL="https://api.anthropic.com"
+NETWORK_WAIT_MAX=1800
+NETWORK_POLL_INTERVAL=60
 
 # launchd から起動されると brew / claude が PATH に無いため明示的に通す
 export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
@@ -115,6 +126,33 @@ mcp_precheck() {
     return ${result}
 }
 
+# DNS 解決・TCP 接続まで通れば到達（HTTP エラー応答でも可）。curl が失敗した時だけ不達
+api_reachable() {
+    curl -s -o /dev/null --max-time 10 "${API_CHECK_URL}" 2>/dev/null
+}
+
+# API に到達できるまで待つ。返り値: 0=到達 / 1=上限まで待っても不達
+# 初回 + 各 attempt 前に呼ぶため、断続的な断では累積で NETWORK_WAIT_MAX × (1 + MAX_ATTEMPTS) まで
+# ブロックしうる（意図した上限。fail-open なので /morning 側は feed-collector に縮退する）
+wait_for_api() {
+    local waited
+    waited=0
+    while ! api_reachable; do
+        if [ "${waited}" -ge "${NETWORK_WAIT_MAX}" ]; then
+            return 1
+        fi
+        if [ "${waited}" -eq 0 ]; then
+            log "collect-feed-prep: API (${API_CHECK_URL}) に到達できない。復旧を最大 $((NETWORK_WAIT_MAX / 60)) 分待つ"
+        fi
+        sleep "${NETWORK_POLL_INTERVAL}"
+        waited=$((waited + NETWORK_POLL_INTERVAL))
+    done
+    if [ "${waited}" -gt 0 ]; then
+        log "collect-feed-prep: API 到達を確認（${waited} 秒待った）"
+    fi
+    return 0
+}
+
 mkdir -p "${HOME}/.claude"
 
 today="$(date +%Y-%m-%d)"
@@ -131,6 +169,15 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 log "=== collect-feed-prep start ==="
+
+# ネットワーク断のまま進めると、mcp list は全サーバー接続失敗＝「再認証が必要」に見えて
+# 誤 ABORT し、claude 起動はリトライを燃やすだけになる。先に到達を確かめ、不達なら待つ
+if ! wait_for_api; then
+    log "collect-feed-prep: FAILED (API に $((NETWORK_WAIT_MAX / 60)) 分待っても到達できない。スタンプは書かない → /morning は feed-collector に縮退)"
+    notify_failure "API に到達できず収集を中止した。ネットワークを確認してほしい。"
+    log "=== collect-feed-prep done ==="
+    exit 0
+fi
 
 # Notion MCP が未接続だと収集は必ず失敗する。再認証は対話（/mcp）でしかできないため
 # リトライしても復旧しない ＝ 3 回空振りさせず、ここで打ち切って再認証を促す。
@@ -169,6 +216,14 @@ run_once() {
 attempt=1
 while [ "${attempt}" -le "${MAX_ATTEMPTS}" ]; do
     log "collect-feed-prep: attempt ${attempt}/${MAX_ATTEMPTS}"
+    # 実行中の接続断（Connection closed mid-response 等）から再試行するとき、
+    # 断が続いたまま claude を起動して試行を燃やさないよう、毎回到達を確かめる
+    if ! wait_for_api; then
+        last_reason="API 到達不可（$((NETWORK_WAIT_MAX / 60)) 分待っても復旧せず）"
+        log "collect-feed-prep: attempt ${attempt} FAILED (${last_reason})"
+        attempt=$((attempt + 1))
+        continue
+    fi
     if run_once; then
         printf '%s\n' "${today}" > "${STAMP_FILE}"
         log "collect-feed-prep: OK (レポート更新・スタンプ記録 / attempt ${attempt})"
