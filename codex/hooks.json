@@ -19,6 +19,20 @@
         "hooks": [
           { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh PreToolUse", "timeout": 5 }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-bash-command.sh", "timeout": 5 },
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-review-push.sh", "timeout": 5 },
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-outbound-comms.sh", "timeout": 5 }
+        ]
+      },
+      {
+        "matcher": "mcp__.*(slack|notion).*",
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/guard-outbound-comms.sh", "timeout": 5 }
+        ]
       }
     ],
     "PostToolUse": [

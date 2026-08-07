@@ -66,6 +66,25 @@ bash_json() {
     /usr/bin/jq -cn --arg cmd "$1" '{tool_input: {command: $cmd}}'
 }
 
+# Codex CLI が PreToolUse に渡す実ペイロード（codex exec で採取した形をそのまま再現）。
+# Codex は内部の exec_command / shell を hook へ渡す時点で tool_name="Bash" ＋
+# tool_input.command（文字列）へ正規化するので、ガードは無改造で共用できる。
+# その前提が壊れたら Codex 側の対人送信ガードが黙って素通りするため、ここで固定する。
+codex_bash_json() {
+    /usr/bin/jq -cn --arg cmd "$1" '{
+        session_id: "019fdaaf-b7ca-7a01-aae1-8d77440f6dde",
+        turn_id: "019fdaaf-b806-7382-a215-d865ab8027ef",
+        transcript_path: "/Users/x/.codex/sessions/2026/08/07/rollout.jsonl",
+        cwd: "/Users/x/src/dotfiles",
+        hook_event_name: "PreToolUse",
+        model: "gpt-5.6-sol",
+        permission_mode: "default",
+        tool_name: "Bash",
+        tool_input: {command: $cmd},
+        tool_use_id: "exec-b7245ea7-f2a5-4ad0-8ba9-2aca92f4c9d7"
+    }'
+}
+
 # Edit ツールの PreToolUse ペイロード
 edit_json() {
     /usr/bin/jq -cn --arg fp "$1" --arg ns "$2" '{tool_input: {file_path: $fp, new_string: $ns}}'
@@ -447,6 +466,22 @@ touch "${OUTBOUND_OK_MARKER}"
 check_logged "承認バイパスを記録する" "gh-pr-issue-write-approved" guard-outbound-comms.sh "$(oc_bash "gh pr comment 1 --body x")"
 
 check_logged "test-skip ブロックを記録する" "test-skip-blocked" guard-test-skip.sh "$(edit_json "foo_test.go" "t.Sk""ip(\"x\")")"
+
+echo "== Codex CLI のペイロード互換 =="
+
+# codex/hooks.json から同じスクリプトを呼んでいる。Codex 形式でも Claude と同じ判定になること。
+assert 2 guard-outbound-comms.sh "Codex形式: 人宛の gh pr comment をブロック" \
+    "$(codex_bash_json "gh pr comment 12 --body '@masahiro 見てください'")"
+assert 0 guard-outbound-comms.sh "Codex形式: bot 宛だけの gh pr comment は許可" \
+    "$(codex_bash_json "gh pr comment 12 --body '/review'")"
+assert 2 guard-outbound-comms.sh "Codex形式: gh pr review はブロック" \
+    "$(codex_bash_json "gh pr review 12 --approve")"
+assert 0 guard-outbound-comms.sh "Codex形式: 読み取りの gh pr view は許可" \
+    "$(codex_bash_json "gh pr view 12")"
+assert 2 guard-bash-command.sh "Codex形式: grep をブロック" \
+    "$(codex_bash_json "grep -rn foo src/")"
+assert 0 guard-bash-command.sh "Codex形式: rg は許可" \
+    "$(codex_bash_json "rg -n foo src/")"
 
 echo "== fail-open 診断計装 =="
 
