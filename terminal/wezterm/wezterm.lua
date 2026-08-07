@@ -24,9 +24,12 @@ config.tab_max_width = 24
 -- config.use_fancy_tab_bar = false
 
 -- タブバーの透過
+-- font_size はタブバー専用（config.font_size とは別系統）で、既定のままだと
+-- 本文 15.0 に対して小さく見えるので合わせて上げる。タブの高さもこれで決まる。
 config.window_frame = {
   inactive_titlebar_bg = "none",
   active_titlebar_bg = "none",
+  font_size = 16.0,
 }
 
 -- タブバーを背景色に合わせる
