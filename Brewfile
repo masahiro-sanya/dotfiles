@@ -16,6 +16,9 @@ brew "git-delta"
 brew "go"
 brew "gogcli"
 brew "grep"
+# herdr: Claude Code / Codex を pane ごとに常駐させ、状態（blocked/working/done/idle）を見て
+# エージェント同士を繋ぐための multiplexer。サーバは brew services ではなく必要時に手で起動する
+brew "herdr"
 brew "icu4c@76"
 brew "lazygit"
 brew "libyaml"
