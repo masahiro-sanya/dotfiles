@@ -22,6 +22,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 - 変更したら必ず `bash -n <script>` と `bash claude/hooks/tests/run-tests.sh` を実行する
 - macOS 標準の bash 3.2 互換で書く。変数展開は `${var}` 形式に統一（bash 3.2 は `$var` 直後の全角文字で変数名解釈が壊れる）
 - fail-open 設計: 入力異常では exit 0 で許可に倒す。ただし `~/.claude/hooks-error.log` に痕跡を残す
+- hook に手で JSON を流して動作確認するときは `GUARD_HITS_LOG=$(mktemp)`（必要に応じ `HOOKS_ERROR_LOG` も）を付け、本物のテレメトリを汚さない（run-tests.sh は退避済みだが、単発の手動実行は素通しで実ログに混ざる。2026-07-31 に実例あり）
 
 ## git worktree
 

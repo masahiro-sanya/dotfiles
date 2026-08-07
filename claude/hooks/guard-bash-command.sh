@@ -83,7 +83,7 @@ fi
 # find は stdin を読まないため、パイプの受け側でもファイルシステム検索のまま＝ cmd_pos のまま検知する。
 if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; then
     log_block "find-blocked" "${cmd}"
-    echo "find は使わない（CLAUDE.md）。fd で書き直してください。例: fd 'name' path/ / fd -e go" >&2
+    echo "find は使わない（CLAUDE.md）。fd で書き直す: find <dir> -name/-iname 'X' → fd 'X' <dir>（小文字パターンは既定で大文字小文字無視）。gitignore/隠しファイルも含めた全数探索は fd -H -I 'X' <dir>。拡張子検索は fd -e go" >&2
     exit 2
 fi
 
