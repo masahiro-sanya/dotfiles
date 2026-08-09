@@ -532,6 +532,10 @@ mkdir -p "${WT_DIR}"
 WT_PANE="99"                                   # 架空の pane id
 WT_STATE_FILE="${WT_DIR}/pane-${WT_PANE}"
 
+# herdr のペイン内で走らせても結果が変わらないよう、この節では HERDR_ENV を落とす
+# （wezterm-status.sh は HERDR_ENV=1 なら no-op。その挙動自体は下で明示的に検証する）
+unset HERDR_ENV
+
 # wt_json <event> <session_id> <agent_id> : hook が読む JSON を組み立てる
 wt_json() {
     /usr/bin/jq -cn --arg e "$1" --arg s "$2" --arg a "${3:-}" \
@@ -685,6 +689,39 @@ if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then
     PASS=$((PASS + 1)); echo "  ok: 非 WezTerm では no-op(ファイル作らず・exit 0)"
 else
     FAIL=$((FAIL + 1)); echo "  NG: 非 WezTerm no-op（exit=${wt_ec}, file=$([ -f "${WT_STATE_FILE}" ] && echo あり || echo なし)）"
+fi
+
+# herdr のペイン内（HERDR_ENV=1）では状態ファイルを作らない・exit 0。
+# herdr 側が同じ表示を持ち、全ペインが同じ WEZTERM_PANE を継ぐため、書くと表示が壊れる。
+# 全イベントで抜けることを見る（1 イベントだけだと、ガードが busy 早期 return より
+# 後ろへ動いても緑のまま通り、herdr 内でタブが busy に凍る退行を捕まえられない）。
+for wt_ev in UserPromptSubmit PreToolUse Stop SessionStart PermissionRequest; do
+    wt_reset
+    printf '%s' "$(wt_json "${wt_ev}" "h1")" | \
+        WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" HERDR_ENV=1 \
+        bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+    wt_ec=$?
+    if [ "${wt_ec}" -eq 0 ] && [ ! -f "${WT_STATE_FILE}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: herdr 内の ${wt_ev} は no-op(ファイル作らず・exit 0)"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: herdr 内 ${wt_ev} no-op（exit=${wt_ec}, file=$([ -f "${WT_STATE_FILE}" ] && echo あり || echo なし)）"
+    fi
+done
+
+# herdr 内では既存の状態ファイルを消さない。継承した pane id は「同じ WezTerm ペインで
+# デタッチ後に起動した通常セッション」のものと区別が付かず、消すと他人の表示を巻き添えにする。
+wt_reset
+printf 'busy' > "${WT_STATE_FILE}"
+printf 'busy' > "${WT_DIR}/main-${WT_PANE}"
+: > "${WT_DIR}/agent-${WT_PANE}-a1"
+printf '%s' "$(wt_json "UserPromptSubmit" "h2")" | \
+    WEZTERM_PANE="${WT_PANE}" WEZTERM_STATE_DIR="${WT_DIR}" HERDR_ENV=1 \
+    bash "${HOOKS_DIR}/wezterm-status.sh" >/dev/null 2>&1
+wt_ec=$?
+if [ "${wt_ec}" -eq 0 ] && [ "$(wt_read)" = "busy" ] && [ -f "${WT_DIR}/agent-${WT_PANE}-a1" ]; then
+    PASS=$((PASS + 1)); echo "  ok: herdr 内は既存の状態を消さない(他セッションを巻き込まない)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: herdr 内で既存状態を破壊（exit=${wt_ec}, state=$(wt_read)）"
 fi
 
 # 壊れた JSON は fail-open（状態ファイルを作らず exit 0）
