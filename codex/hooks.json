@@ -5,6 +5,11 @@
         "hooks": [
           { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh SessionStart", "timeout": 5 }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "if [ -x ~/.codex/herdr-agent-state.sh ]; then bash ~/.codex/herdr-agent-state.sh session; fi", "timeout": 10 }
+        ]
       }
     ],
     "UserPromptSubmit": [
