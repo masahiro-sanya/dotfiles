@@ -10,7 +10,7 @@
 #   - Notion のコメント
 #   - メール送信
 #   - herdr で他ペイン（＝他セッション・他エージェント）へ入力を送り込むもの
-#     （herdr agent prompt / send-keys、herdr pane send-text / send-keys / run）
+#     （herdr agent prompt / send-keys / start、herdr pane send-text / send-keys / run）
 # 通す:
 #   - 読み取り系すべて（gh pr view / diff、slack_read_*、notion-fetch 等）
 #   - herdr の読み取り・表示系（agent list / get / read / wait / explain、pane list / read、
@@ -160,38 +160,65 @@ gh_body_is_bot_only() {
 }
 
 # ---- 判定: コマンド文字列 ----
+# コマンド全文に正規表現をかける小さなヘルパー。判定ルールは全部これ経由で書く。
+# コマンド文字列の正規化のしかた（行継続の畳み込み等）を変えるとき、11 か所に散った
+# printf|grep を全部直して回る必要をなくすため。1 か所直し忘れたルールは静かに
+# 発火しなくなり、通過したコマンドと見分けがつかない。
+cmd_matches() {
+    printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "$1"
+}
+
 # 対人送信なら "分類<TAB>理由" を stdout に出して return 0、非該当は return 1。
+# $2 は再帰の深さ。`bash -c '…'` の中身を見に行くときだけ増える（外から渡さない）。
 classify_command() {
+    local _cmd _depth _inner _hit _cmd_head _wrap _path _cmd_pos _gh_opts _body
+    _depth="${2:-0}"
     _cmd="$(printf '%s\n' "$1" | strip_heredocs)"
     [ -z "${_cmd}" ] && return 1
 
+    # 行継続（\ + 改行）を畳んで 1 行にする。判定の grep は行単位に効くので、畳まないと
+    # `herdr \` + 改行 + `  agent prompt …` のように割るだけで判定を跨げてしまう。
+    _cmd="$(printf '%s\n' "${_cmd}" | /usr/bin/awk '{ if (sub(/\\$/, "")) printf "%s ", $0; else print }')"
+    [ -z "${_cmd}" ] && return 1
+
     # コマンド位置の gh / gog / herdr だけを見る（echo やコミットメッセージ中の文字列で誤爆させない）。
-    # 区切り（_cmd_head）だけを見ると、実体の手前に何か挟むだけでガード全体を迂回できる。
-    # 実測で素通りを確認した形: `command gh pr comment …` / `env gh …` /
-    # `FOO=1 gh …` / `/opt/homebrew/bin/gh …`。そこで
-    #   _wrap: 変数代入とラッパー語（command / env / exec / nohup / sudo / time / builtin）
-    #   _path: パス付き実行（/opt/homebrew/bin/gh）
-    # を接頭辞として吸収してから、実体のコマンド名を探す。
-    _cmd_head='(^|[|;&(]|\$\(|`)[[:space:]]*'
-    _wrap='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|command|env|exec|nohup|sudo|time|builtin)[[:space:]]+'
+    # 「コマンド位置」を 3 つの部品で表す。どれか 1 つでも取りこぼすと、実体の手前に
+    # 何か挟むだけでガード全体を迂回できる。
+    #   _cmd_head: 直前の区切り。パイプ・セミコロン・& のほか、シェルのキーワード
+    #              （do / then / else / if / while …）と `{` も区切りとして扱う。
+    #              これが無いと `for p in a b; do herdr agent prompt $p x; done` が丸ごと素通りする
+    #   _wrap:     変数代入とラッパー語。ラッパーは自分のオプションを取る（`sudo -u me` /
+    #              `timeout 30` / `env -i`）ので、続く非区切りトークンも吸収する。
+    #              語を 1 つ足すだけの吸収だと、フラグ 1 個で穴が再び開く
+    #   _path:     パス付き実行（/opt/homebrew/bin/gh）
+    _cmd_head='((^|[|;&({]|\$\(|`)|(^|[[:space:]])(do|then|else|elif|if|while|until|!)[[:space:]])[[:space:]]*'
+    _wrap='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|command|env|exec|nohup|sudo|doas|time|timeout|builtin|nice|ionice|stdbuf|setsid|xargs)([[:space:]]+[^[:space:]|;&]+)*[[:space:]]+'
     _path='([^[:space:]|;&]*/)?'
-
-    # `bash -lc '…'` のようにシェルでくるまれた形は、中身がクォートの内側にあるため
-    # 上の区切りに載らない。ネストしたシェル起動を見つけたときだけ、クォートも
-    # コマンド位置の区切りとして扱う。クォート内の文字列（rg のパターン等）まで
-    # 拾うようになるが、振れるのはブロック側＝安全側なので許容する。
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
-        "${_cmd_head}(${_wrap})*${_path}(ba|z|da|k)?sh([[:space:]]+-{1,2}[A-Za-z-]+)*[[:space:]]+-[A-Za-z]*c([[:space:]]|$)"; then
-        _cmd_head="(^|[|;&(]|\\\$\\(|\`|[\"'])[[:space:]]*"
-    fi
-
     _cmd_pos="${_cmd_head}(${_wrap})*${_path}"
     _gh_opts='([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?'
+
+    # `bash -lc '…'` のようにシェルでくるまれた形は、中身がクォートの内側にあるため
+    # 上の区切りに載らない。クォートを区切りへ昇格させる手もあるが、それをやると
+    # 送信を伴わない `git commit -m "gh pr review …"` まで巻き込むうえ、本文が読めなくなって
+    # 「bot 宛だけなら通す」例外まで死ぬ（どちらも実際に誤爆した）。
+    # 代わりに -c の後ろを取り出し、同じ判定を再帰でかける。内側でも本文の読み取りが
+    # そのまま効くので、bot 宛の例外は生きたまま迂回だけを塞げる。
+    # シェルのオプションは値を取るもの（-o pipefail）があるため非区切りトークンで受ける。
+    if [ "${_depth}" -lt 3 ] && cmd_matches \
+        "${_cmd_head}(${_wrap})*${_path}(ba|z|da|k)?sh([[:space:]]+[^[:space:]|;&]+)*[[:space:]]+-[A-Za-z]*c([[:space:]]|$)"; then
+        _inner="$(printf '%s\n' "${_cmd}" | /usr/bin/sed -E 's/^.*[[:space:]]-[A-Za-z]*c[[:space:]]+//')"
+        _inner="$(printf '%s\n' "${_inner}" | /usr/bin/sed -E 's/^["'"'"']//; s/["'"'"'][[:space:]]*$//')"
+        if [ -n "${_inner}" ] && [ "${_inner}" != "${_cmd}" ] \
+            && _hit="$(classify_command "${_inner}" "$((_depth + 1))")"; then
+            printf '%s\n' "${_hit}"
+            return 0
+        fi
+    fi
 
     # gh pr comment / gh issue comment（＝人が読むコメント）
     # 本文が bot 宛だけ（/review 等のスラッシュコマンド、@claude/@gemini 等の bot メンション）なら
     # 人への呼びかけではないので通す。本文を読めないときは判定不能＝ブロックに倒す
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+comment([[:space:]]|$)"; then
+    if cmd_matches "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+comment([[:space:]]|$)"; then
         # 通すときも return せず後続の判定を続ける（&& で他の対人操作を連結されうるため）
         if ! { _body="$(gh_comment_body "${_cmd}")" && gh_body_is_bot_only "${_body}"; }; then
             printf 'gh-pr-issue-write\tレビューコメント・返信です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
@@ -202,7 +229,7 @@ classify_command() {
     # gh pr review は PR 作者宛のレビュー提出なので bot 宛の例外を作らない
     # gh pr create / gh issue create は自分の成果物の提出で、レビュー依頼フラグが
     # 付かない限り特定の人への呼びかけではないため通す（下の --add-reviewer 判定で拾う）
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh${_gh_opts}[[:space:]]+pr[[:space:]]+review([[:space:]]|$)"; then
+    if cmd_matches "${_cmd_pos}gh${_gh_opts}[[:space:]]+pr[[:space:]]+review([[:space:]]|$)"; then
         printf 'gh-pr-issue-write\tレビュー提出です。勝手に返信しないこと。本文をユーザーに提示して承認を得てください。\n'
         return 0
     fi
@@ -210,23 +237,23 @@ classify_command() {
     # gh pr edit --add-reviewer など、他の人を巻き込むフラグ。
     # gh 本体とフラグが同じ行にあることを 1 つの正規表現で要求する（別々の grep を
     # 全体にかけると、離れた行の断片同士が組み合わさって誤爆する）
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
+    if cmd_matches \
         "${_cmd_pos}gh${_gh_opts}[[:space:]]+(pr|issue)[[:space:]]+[^|;&]*(--add-reviewer|--add-assignee|--reviewer|--assignee)([[:space:]]|=|$)"; then
         printf 'gh-request-review\tレビュー依頼・アサインは相手に通知が飛びます。誰に依頼するかユーザーに確認してください。\n'
         return 0
     fi
 
     # gh api でのコメント/レビュー投稿（fix-pr-reviews の replies エンドポイント等）
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}gh([[:space:]]+[^[:space:]]+)*[[:space:]]+api([[:space:]]|$)"; then
-        if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE '(^|[[:space:]])graphql([[:space:]]|$)'; then
+    if cmd_matches "${_cmd_pos}gh([[:space:]]+[^[:space:]]+)*[[:space:]]+api([[:space:]]|$)"; then
+        if cmd_matches '(^|[[:space:]])graphql([[:space:]]|$)'; then
             # GraphQL は query 本文に comments/reviews が普通に出る（読み取りクエリ）ため、
             # エンドポイント名ではなく mutation 名だけで判定する
-            if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE '(addComment|addPullRequestReview|submitPullRequestReview|addDiscussionComment|minimizeComment|requestReviews)'; then
+            if cmd_matches '(addComment|addPullRequestReview|submitPullRequestReview|addDiscussionComment|minimizeComment|requestReviews)'; then
                 printf 'gh-api-comment\tGraphQL でコメント／レビューを投稿しようとしています。本文をユーザーに提示して承認を得てください。\n'
                 return 0
             fi
-        elif printf '%s\n' "${_cmd}" | /usr/bin/grep -qE '(comments|reviews|replies|/issues/)' \
-            && printf '%s\n' "${_cmd}" | /usr/bin/grep -qE '(-X[[:space:]]*(POST|PATCH|PUT|DELETE)|-{1,2}method[[:space:]]+(POST|PATCH|PUT|DELETE)|(^|[[:space:]])(-f|-F|--field|--raw-field|--input)([[:space:]]|=))'; then
+        elif cmd_matches '(comments|reviews|replies|/issues/)' \
+            && cmd_matches '(-X[[:space:]]*(POST|PATCH|PUT|DELETE)|-{1,2}method[[:space:]]+(POST|PATCH|PUT|DELETE)|(^|[[:space:]])(-f|-F|--field|--raw-field|--input)([[:space:]]|=))'; then
             printf 'gh-api-comment\tgh api でコメント／レビューを投稿しようとしています。本文をユーザーに提示して承認を得てください。\n'
             return 0
         fi
@@ -235,19 +262,21 @@ classify_command() {
     # herdr で他ペインへ入力を送り込むもの。相手は別セッションの Claude や Codex で、
     # 送った文字列はそのまま相手の文脈に入って作業を動かす（＝人に呼びかけるのと同じ扱い）。
     # 読み取り（list / get / read / wait / explain）と表示操作（focus / rename）は通す。
+    # agent start も対象に含める。既存ペインでエージェントを起こす＝pane run と同じ
+    # ペイン書き込み権限で、相手が作業中のものを潰しうるため。
     #
     # herdr とサブコマンドの間は [^|;&]* で受ける。`herdr --session foo agent prompt` のように
     # グローバルオプションが挟まる形を取りこぼさないため。パイプ・セミコロンは跨がないので、
     # `herdr agent list | rg prompt` のような別コマンドまでは巻き込まない。
     # 判定が緩む側（読み取りコマンドを巻き込む）に振れてもブロック＝安全側に倒れる。
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
-        "${_cmd_pos}herdr[^|;&]*[[:space:]](agent[[:space:]]+(prompt|send-keys)|pane[[:space:]]+(send-text|send-keys|run))([[:space:]]|$)"; then
+    if cmd_matches \
+        "${_cmd_pos}herdr[^|;&]*[[:space:]](agent[[:space:]]+(prompt|send-keys|start)|pane[[:space:]]+(send-text|send-keys|run))([[:space:]]|$)"; then
         printf 'herdr-agent-send\t他のセッション／エージェントのペインへ入力を送り込もうとしています。宛先ペインと本文をユーザーに提示して承認を得てください。\n'
         return 0
     fi
 
     # メール送信（gogcli の gmail send）
-    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE "${_cmd_pos}(gog|gogcli(\.sh)?)([[:space:]]+[^[:space:]]+)*[[:space:]]+gmail[[:space:]]+(send|reply|forward)([[:space:]]|$)"; then
+    if cmd_matches "${_cmd_pos}(gog|gogcli(\.sh)?)([[:space:]]+[^[:space:]]+)*[[:space:]]+gmail[[:space:]]+(send|reply|forward)([[:space:]]|$)"; then
         printf 'mail-send\tメール送信です。宛先と本文をユーザーに確認してください。\n'
         return 0
     fi

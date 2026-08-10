@@ -264,6 +264,43 @@ assert 2 guard-outbound-comms.sh "絶対パス実行の prompt もブロック" 
 assert 2 guard-outbound-comms.sh "sudo 経由の prompt もブロック" "$(oc_bash "sudo herdr agent prompt wA:p1 'x'")"
 assert 2 guard-outbound-comms.sh "bash -lc でくるんだ prompt もブロック" "$(oc_bash "bash -lc 'herdr agent prompt wA:p1 hi'")"
 assert 2 guard-outbound-comms.sh "sh -c でくるんだ prompt もブロック" "$(oc_bash "sh -c \"herdr pane send-text wA:p1 hi\"")"
+assert 2 guard-outbound-comms.sh "herdr agent start もブロック（既存ペインを潰す）" "$(oc_bash "herdr agent start wA:p1 claude")"
+
+# 「コマンド位置」の取りこぼしによる迂回（AI レビューで発覚）。
+# 素のラッパー形だけを固定していると、フラグ 1 個・キーワード 1 個で穴が再び開くので、
+# 実際に素通りした形をそのまま assert に残す。
+# 1) シェルのキーワード（do / then / {）の後ろはコマンド位置として見られていなかった
+assert 2 guard-outbound-comms.sh "for/do の中の herdr prompt もブロック" "$(oc_bash "for p in a b; do herdr agent prompt \$p x; done")"
+assert 2 guard-outbound-comms.sh "if/then の中の herdr prompt もブロック" "$(oc_bash "if true; then herdr agent prompt wA:p1 x; fi")"
+assert 2 guard-outbound-comms.sh "ブレースグループの中の herdr prompt もブロック" "$(oc_bash "{ herdr agent prompt wA:p1 x; }")"
+assert 2 guard-outbound-comms.sh "for/do の中の gh pr comment もブロック" "$(oc_bash "for i in 1 2; do gh pr comment \$i --body x; done")"
+assert 2 guard-outbound-comms.sh "for/do の中のメール送信もブロック" "$(oc_bash "for a in x y; do gogcli.sh gmail send --to \$a; done")"
+# 2) ラッパーが自分のオプションを取る形は吸収できていなかった
+assert 2 guard-outbound-comms.sh "sudo -u 付きの herdr prompt もブロック" "$(oc_bash "sudo -u me herdr agent prompt wA:p1 x")"
+assert 2 guard-outbound-comms.sh "env -i 付きの herdr prompt もブロック" "$(oc_bash "env -i herdr agent prompt wA:p1 x")"
+assert 2 guard-outbound-comms.sh "timeout 経由の herdr prompt もブロック" "$(oc_bash "timeout 30 herdr agent prompt wA:p1 x")"
+assert 2 guard-outbound-comms.sh "nice 経由の herdr prompt もブロック" "$(oc_bash "nice -n 10 herdr agent prompt wA:p1 x")"
+assert 2 guard-outbound-comms.sh "command -p 付きの gh pr comment もブロック" "$(oc_bash "command -p gh pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "sudo -u 付きの gh pr comment もブロック" "$(oc_bash "sudo -u me gh pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "値に空白を含む変数代入前置もブロック" "$(oc_bash "GH_TOKEN=\"a b\" gh pr comment 1 --body x")"
+# 3) 値を取るシェルオプション（-o pipefail）を挟むとネストシェルと見なされなかった
+assert 2 guard-outbound-comms.sh "bash -o pipefail -c の中の gh comment もブロック" "$(oc_bash "bash -o pipefail -c \"gh pr comment 1 --body x\"")"
+assert 2 guard-outbound-comms.sh "bash -o pipefail -c の中の herdr prompt もブロック" "$(oc_bash "bash -o pipefail -c \"herdr agent prompt wA:p1 hi\"")"
+# 4) 行継続で割ると grep が行を跨げず素通りしていた
+assert 2 guard-outbound-comms.sh "行継続で割った herdr prompt もブロック" "$(oc_bash "herdr \\
+  agent prompt wA:p1 hi")"
+assert 2 guard-outbound-comms.sh "行継続で割った gh pr comment もブロック" "$(oc_bash "gh pr \\
+  comment 1 --body x")"
+
+# 送信を伴わないものを誤ブロックしない。ネストシェルを見つけたときにクォートごと
+# コマンド位置扱いする実装だとここが赤くなる（承認マーカーの常用を招き、ガードごと形骸化する）
+assert 0 guard-outbound-comms.sh "コミットメッセージ中の gh pr review は許可" "$(oc_bash "bash -lc \"make test\" && git commit -m \"gh pr review をブロックするようにした\"")"
+assert 0 guard-outbound-comms.sh "echo の文字列中のメール送信は許可" "$(oc_bash "sh -c \"ls\" && echo \"gogcli.sh gmail send はブロック対象\"")"
+assert 0 guard-outbound-comms.sh "rg の検索パターン中の gh pr review は許可" "$(oc_bash "bash -lc \"rg foo\" && rg \"gh pr review 1\" .")"
+# シェルでくるんでも本文は読めること（bot 宛だけなら通す例外が生きていること）
+assert 0 guard-outbound-comms.sh "bash -lc 越しの /review は許可" "$(oc_bash "bash -lc 'gh pr comment 1 --body \"/review\"'")"
+assert 0 guard-outbound-comms.sh "bash -lc 越しの @claude は許可" "$(oc_bash "bash -lc 'gh pr comment 1 --body \"@claude\"'")"
+assert 2 guard-outbound-comms.sh "bash -lc 越しでも人宛メンションはブロック" "$(oc_bash "bash -lc 'gh pr comment 1 --body \"@alice 見てください\"'")"
 
 # herdr の読み取り・表示系は素通り（誤爆させない）
 assert 0 guard-outbound-comms.sh "herdr agent list は許可" "$(oc_bash "herdr agent list")"
