@@ -240,6 +240,40 @@ assert 2 guard-outbound-comms.sh "gh api の replies POST はブロック" "$(oc
 assert 2 guard-outbound-comms.sh "GraphQL の addComment はブロック" "$(oc_bash "gh api graphql -f query='mutation { addComment(input: {}) { id } }'")"
 assert 2 guard-outbound-comms.sh "メール送信はブロック" "$(oc_bash "gogcli.sh gmail send --to a@example.com")"
 
+# ラッパー・パス付き実行での迂回（codex レビューで発覚。gh / メールにも元から空いていた）
+assert 2 guard-outbound-comms.sh "command 経由の gh pr comment もブロック" "$(oc_bash "command gh pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "絶対パス実行の gh pr comment もブロック" "$(oc_bash "/opt/homebrew/bin/gh pr comment 1 --body x")"
+assert 2 guard-outbound-comms.sh "env 経由の gh pr review もブロック" "$(oc_bash "env gh pr review 12 --comment -b fix")"
+assert 2 guard-outbound-comms.sh "変数代入を前置した gh api もブロック" "$(oc_bash "GH_TOKEN=x gh api repos/o/r/pulls/1/comments/9/replies -X POST -f body=hi")"
+assert 2 guard-outbound-comms.sh "command 経由のメール送信もブロック" "$(oc_bash "command gogcli.sh gmail send --to a@example.com")"
+assert 2 guard-outbound-comms.sh "bash -lc でくるんだ gh pr comment もブロック" "$(oc_bash "bash -lc 'gh pr comment 1 --body x'")"
+
+# herdr: 他ペイン（他セッション・他エージェント）への入力注入はブロック
+assert 2 guard-outbound-comms.sh "herdr agent prompt はブロック" "$(oc_bash "herdr agent prompt wA:p1 'テストを直して'")"
+assert 2 guard-outbound-comms.sh "herdr agent send-keys はブロック" "$(oc_bash "herdr agent send-keys wA:p1 Enter")"
+assert 2 guard-outbound-comms.sh "herdr pane send-text はブロック" "$(oc_bash "herdr pane send-text wA:p1 'hi'")"
+assert 2 guard-outbound-comms.sh "herdr pane send-keys はブロック" "$(oc_bash "herdr pane send-keys wA:p1 C-c")"
+assert 2 guard-outbound-comms.sh "herdr pane run はブロック" "$(oc_bash "herdr pane run wA:p1 -- ls")"
+assert 2 guard-outbound-comms.sh "グローバルオプション挟みの prompt もブロック" "$(oc_bash "herdr --session main agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "&& の後の herdr prompt もブロック" "$(oc_bash "herdr agent list && herdr agent prompt wA:p1 'x'")"
+# ラッパー・パス付き実行での迂回（codex レビューで発覚した実際の抜け穴）
+assert 2 guard-outbound-comms.sh "command 経由の prompt もブロック" "$(oc_bash "command herdr agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "env 経由の prompt もブロック" "$(oc_bash "env herdr agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "変数代入を前置した prompt もブロック" "$(oc_bash "HERDR_ENV=1 herdr agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "絶対パス実行の prompt もブロック" "$(oc_bash "/opt/homebrew/bin/herdr agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "sudo 経由の prompt もブロック" "$(oc_bash "sudo herdr agent prompt wA:p1 'x'")"
+assert 2 guard-outbound-comms.sh "bash -lc でくるんだ prompt もブロック" "$(oc_bash "bash -lc 'herdr agent prompt wA:p1 hi'")"
+assert 2 guard-outbound-comms.sh "sh -c でくるんだ prompt もブロック" "$(oc_bash "sh -c \"herdr pane send-text wA:p1 hi\"")"
+
+# herdr の読み取り・表示系は素通り（誤爆させない）
+assert 0 guard-outbound-comms.sh "herdr agent list は許可" "$(oc_bash "herdr agent list")"
+assert 0 guard-outbound-comms.sh "herdr agent read は許可" "$(oc_bash "herdr agent read wA:p1 --lines 50")"
+assert 0 guard-outbound-comms.sh "herdr agent wait は許可" "$(oc_bash "herdr agent wait wA:p1 --until idle --timeout 60000")"
+assert 0 guard-outbound-comms.sh "herdr pane list は許可" "$(oc_bash "herdr pane list")"
+assert 0 guard-outbound-comms.sh "herdr agent focus は許可" "$(oc_bash "herdr agent focus wA:p1")"
+assert 0 guard-outbound-comms.sh "herdr agent list をパイプで絞るのは許可" "$(oc_bash "herdr agent list | rg prompt")"
+assert 0 guard-outbound-comms.sh "echo 中の herdr agent prompt は許可" "$(oc_bash "echo herdr agent prompt")"
+
 # 読み取り・無関係コマンドは素通り（誤爆させない）
 assert 0 guard-outbound-comms.sh "gh pr create は許可（自分の成果物の提出）" "$(oc_bash "gh pr create --title x --body y")"
 assert 0 guard-outbound-comms.sh "gh issue create は許可" "$(oc_bash "gh issue create --title x --body y")"
@@ -404,6 +438,8 @@ assert 0 guard-outbound-comms.sh "承認マーカーがあれば通す" "$(oc_ba
 assert 2 guard-outbound-comms.sh "マーカーは1回で消費される（2回目はブロック）" "$(oc_bash "gh pr comment 1 --body x")"
 touch "${OUTBOUND_OK_MARKER}"
 assert 0 guard-outbound-comms.sh "承認マーカーは Slack メンションにも効く" "$(oc_slack "${SLACK_SEND}" "C012345" "<!here> 告知")"
+touch "${OUTBOUND_OK_MARKER}"
+assert 0 guard-outbound-comms.sh "承認マーカーは herdr の入力注入にも効く" "$(oc_bash "herdr agent prompt wA:p1 'x'")"
 
 # 11分前のマーカー（TTL 10分超）は無効。BSD(macOS) / GNU(CI) 両対応で mtime を戻す
 touch "${OUTBOUND_OK_MARKER}"

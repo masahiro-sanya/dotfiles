@@ -9,8 +9,12 @@
 #   - Slack の送信のうち、本文にメンションを含むもの と DM 宛のもの
 #   - Notion のコメント
 #   - メール送信
+#   - herdr で他ペイン（＝他セッション・他エージェント）へ入力を送り込むもの
+#     （herdr agent prompt / send-keys、herdr pane send-text / send-keys / run）
 # 通す:
 #   - 読み取り系すべて（gh pr view / diff、slack_read_*、notion-fetch 等）
+#   - herdr の読み取り・表示系（agent list / get / read / wait / explain、pane list / read、
+#     workspace・tab の list / get 等）
 #   - gh pr create / gh issue create（レビュー依頼フラグを伴わないもの）
 #   - メンションなしの Slack チャンネル投稿・リアクション・canvas
 #   - gh pr/issue comment のうち、本文が bot 宛だけのもの（/review 等のスラッシュコマンド、
@@ -161,8 +165,27 @@ classify_command() {
     _cmd="$(printf '%s\n' "$1" | strip_heredocs)"
     [ -z "${_cmd}" ] && return 1
 
-    # コマンド位置の gh / gog だけを見る（echo やコミットメッセージ中の文字列で誤爆させない）
-    _cmd_pos='(^|[|;&(]|\$\(|`)[[:space:]]*'
+    # コマンド位置の gh / gog / herdr だけを見る（echo やコミットメッセージ中の文字列で誤爆させない）。
+    # 区切り（_cmd_head）だけを見ると、実体の手前に何か挟むだけでガード全体を迂回できる。
+    # 実測で素通りを確認した形: `command gh pr comment …` / `env gh …` /
+    # `FOO=1 gh …` / `/opt/homebrew/bin/gh …`。そこで
+    #   _wrap: 変数代入とラッパー語（command / env / exec / nohup / sudo / time / builtin）
+    #   _path: パス付き実行（/opt/homebrew/bin/gh）
+    # を接頭辞として吸収してから、実体のコマンド名を探す。
+    _cmd_head='(^|[|;&(]|\$\(|`)[[:space:]]*'
+    _wrap='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|command|env|exec|nohup|sudo|time|builtin)[[:space:]]+'
+    _path='([^[:space:]|;&]*/)?'
+
+    # `bash -lc '…'` のようにシェルでくるまれた形は、中身がクォートの内側にあるため
+    # 上の区切りに載らない。ネストしたシェル起動を見つけたときだけ、クォートも
+    # コマンド位置の区切りとして扱う。クォート内の文字列（rg のパターン等）まで
+    # 拾うようになるが、振れるのはブロック側＝安全側なので許容する。
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
+        "${_cmd_head}(${_wrap})*${_path}(ba|z|da|k)?sh([[:space:]]+-{1,2}[A-Za-z-]+)*[[:space:]]+-[A-Za-z]*c([[:space:]]|$)"; then
+        _cmd_head="(^|[|;&(]|\\\$\\(|\`|[\"'])[[:space:]]*"
+    fi
+
+    _cmd_pos="${_cmd_head}(${_wrap})*${_path}"
     _gh_opts='([[:space:]]+(-R|--repo)[[:space:]]+[^[:space:]]+)?'
 
     # gh pr comment / gh issue comment（＝人が読むコメント）
@@ -207,6 +230,20 @@ classify_command() {
             printf 'gh-api-comment\tgh api でコメント／レビューを投稿しようとしています。本文をユーザーに提示して承認を得てください。\n'
             return 0
         fi
+    fi
+
+    # herdr で他ペインへ入力を送り込むもの。相手は別セッションの Claude や Codex で、
+    # 送った文字列はそのまま相手の文脈に入って作業を動かす（＝人に呼びかけるのと同じ扱い）。
+    # 読み取り（list / get / read / wait / explain）と表示操作（focus / rename）は通す。
+    #
+    # herdr とサブコマンドの間は [^|;&]* で受ける。`herdr --session foo agent prompt` のように
+    # グローバルオプションが挟まる形を取りこぼさないため。パイプ・セミコロンは跨がないので、
+    # `herdr agent list | rg prompt` のような別コマンドまでは巻き込まない。
+    # 判定が緩む側（読み取りコマンドを巻き込む）に振れてもブロック＝安全側に倒れる。
+    if printf '%s\n' "${_cmd}" | /usr/bin/grep -qE \
+        "${_cmd_pos}herdr[^|;&]*[[:space:]](agent[[:space:]]+(prompt|send-keys)|pane[[:space:]]+(send-text|send-keys|run))([[:space:]]|$)"; then
+        printf 'herdr-agent-send\t他のセッション／エージェントのペインへ入力を送り込もうとしています。宛先ペインと本文をユーザーに提示して承認を得てください。\n'
+        return 0
     fi
 
     # メール送信（gogcli の gmail send）

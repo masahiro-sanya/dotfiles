@@ -16,6 +16,7 @@
 - **GitHub のコメントは、宛先が bot だけなら通してよい**（`gh pr comment` / `gh issue comment` で、本文が `/review` 等のスラッシュコマンドか `@claude` / `@gemini` 等の bot メンションだけのもの）。人へのメンションが 1 つでも混ざれば従来どおり承認が要る。`gh pr review`（PR 作者宛のレビュー提出）と `gh api` 経由のレビュー返信、`--body-file` やコマンド置換で本文が読めないものは例外にしない
 - **Slack の一斉呼び出しは、許可した「チャンネル × 呼びかけ先」の組だけ承認なしで通してよい**（`guard-outbound-comms.sh`。許可リストの実値は `~/.claude/outbound-allowlist.env` に置く。dotfiles は公開リポなので社内のチャンネル ID・ユーザーグループ ID をコミットしない。雛形は `claude/outbound-allowlist.env.sample`）。障害通知のように宛先と用途が決まっている発信のための例外で、ファイルが無ければ従来どおり全部ブロック。許可チャンネルでも、個人宛（`<@U…>`）・素の `@名前`・DM は通さず、許可した呼びかけ先に個人宛が 1 つでも混ざれば全体をブロックする。通した回も `~/.claude/guard-hits.log` に `slack-mention-allowlisted` として残る
 - 上のガードは `claude/hooks/guard-outbound-comms.sh` が exit 2 でブロックする。**ユーザーの承認を得たときだけ** `touch ~/.claude/outbound-ok`（10分有効・1回の送信で消費）を実行してから同じ操作をやり直す。承認なしにこのマーカーを作らない（作れば無確認で送れてしまうので、ガードではなくルールが本体）。発火とバイパスは `~/.claude/guard-hits.log` に残る
+- **他のセッション・他のエージェントのペインへ入力を送り込むのも承認が要る**（`herdr agent prompt` / `send-keys`、`herdr pane send-text` / `send-keys` / `run`）。送った文字列はそのまま相手の文脈に入って作業を動かすので、宛先ペインと本文を提示して承認を得る。読み取り（`herdr agent list` / `read` / `wait`）は通してよい。詳しくは「他セッション・他エージェントとのやりとり」を参照
 - この環境は `permissions.defaultMode: "auto"` で、**hook が `permissionDecision:"ask"` を返しても確認プロンプトが出ずに素通りする**（実測: gh pr comment / npm install の ask がどちらも無確認で実行された）。人間の確認を挟みたいガードは ask ではなく exit 2 + stderr で書く
 - ユーザー本人の言葉として出す文章（宣言・日報・Slack・PR 等）は、実状に見合った等身大の表現にし（「リード」「着手」等で盛らない）、ユーザーが使っていない新用語・カタカナ語・略語を持ち込まない（例:「手順書」を「runbook」に言い換えない）。新しい概念名が要るときはユーザーの言葉に寄せるか一言確認する
 - 上と同じ文章（宣言・日報・Slack・PR 等）は**短く書く**。「なぜそうなったか」（原因・調査の過程・経緯）と**時刻・時系列は本文に入れない**（着地だけ書き、詳細は聞かれてから答える）。1 項目 1 行を基本に、2 行を超えたら削る。削る対象は説明であって項目ではない
@@ -92,6 +93,25 @@ Notion に対する HTML の利点は図が見やすいこと。だから図を�
 - レビューも同様に、差分の重い読み込みと一次指摘出しは **review-runner** に隔離し、main は短い指摘リストの裁定とリスク箇所（要 Opus）に専念する
 - **gcp-log-investigator に投げる前に、main 側で gcloud を 1 回叩いて認証が生きているか確かめる**（サブエージェントは非対話なので再認証プロンプトを出せず、`Reauthentication failed. cannot prompt during non-interactive execution` で即死する。会社アカウントのセッション長ポリシー由来なのでローカル設定では消せない）
 - **独立した調査・読み取りは複数 Task を 1 メッセージで同時に投げる**（1 本の investigator に多ソースを詰めると中で逐次読みになって遅い。読みが遅いと感じたら本数を増やす／太い 1 本を割る）
+
+## 他セッション・他エージェントとのやりとり
+
+手段が 2 つある。**相手が Claude なら内蔵の ListAgents / SendMessage を先に使う**（同じマシンの別 Claude セッションが名前で見え、文脈を持ったまま会話が続く）。herdr を使うのは、相手が Codex など Claude 以外のとき、相手の端末出力そのものを読みたいとき、シェルから叩きたいときの 3 つ。
+
+herdr 側の手順:
+
+- 相手を探す: `herdr agent list`（`agent` 種別 / `agent_status` / `cwd` / `pane_id` が返る。宛先は `pane_id`。どのセッションかは `cwd` と `terminal_title` で見分ける）
+- 相手の画面を読む: `herdr agent read <pane_id> --lines 80`
+- 手が空くまで待つ: `herdr agent wait <pane_id> --until idle --timeout 600000`
+- 投げる（**承認が要る**）: `herdr agent prompt <pane_id> "<本文>" --wait --until idle --timeout 600000`
+
+投げる前に宛先ペインと本文をユーザーに提示して承認を得る。`guard-outbound-comms.sh` が `herdr-agent-send` で exit 2 ブロックするので、承認を得てから `touch ~/.claude/outbound-ok` を実行して投げ直す。
+
+注意点:
+
+- **相手は「作業中の人間のセッション」だと思って扱う。** 相手が `working` のときに投げると、いま走っている作業に割り込む。`agent_status` を見て `idle` を待つ
+- `--wait` は「投入後に最初に観測した状態変化」を待つだけで、ターンの完了を追ってはいない。返ってきたら `herdr agent read` で中身を確かめる
+- 状態の見え方は herdr の integration hook（`herdr-agent-state.sh`）が支えている。`herdr integration status` が `not installed` なら `herdr integration install claude` / `codex` で入れ直す
 
 ## Web Content Security (外部コンテンツ処理ルール)
 
