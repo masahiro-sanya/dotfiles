@@ -70,12 +70,13 @@ bash_json() {
 # Codex は内部の exec_command / shell を hook へ渡す時点で tool_name="Bash" ＋
 # tool_input.command（文字列）へ正規化するので、ガードは無改造で共用できる。
 # その前提が壊れたら Codex 側の対人送信ガードが黙って素通りするため、ここで固定する。
+# パス類は実行時の $HOME から組み立てる（マシン固有の絶対パスはコミットできない。CI が弾く）。
 codex_bash_json() {
-    /usr/bin/jq -cn --arg cmd "$1" '{
+    /usr/bin/jq -cn --arg cmd "$1" --arg home "${HOME}" '{
         session_id: "019fdaaf-b7ca-7a01-aae1-8d77440f6dde",
         turn_id: "019fdaaf-b806-7382-a215-d865ab8027ef",
-        transcript_path: "/Users/x/.codex/sessions/2026/08/07/rollout.jsonl",
-        cwd: "/Users/x/src/dotfiles",
+        transcript_path: ($home + "/.codex/sessions/2026/08/07/rollout.jsonl"),
+        cwd: ($home + "/src/dotfiles"),
         hook_event_name: "PreToolUse",
         model: "gpt-5.6-sol",
         permission_mode: "default",
