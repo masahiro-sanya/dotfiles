@@ -234,11 +234,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "afplay /System/Library/Sounds/Ping.aiff &",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "bash ~/.claude/hooks/wezterm-status.sh",
             "timeout": 5
           }
@@ -263,6 +258,7 @@
     "command": "~/.claude/statusline.sh",
     "padding": 1
   },
+  "preferredNotifChannel": "notifications_disabled",
   "enabledPlugins": {
     "slack@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true,

@@ -811,6 +811,94 @@ else
 fi
 
 echo ""
+echo "== claude-stop-notify.sh =="
+
+# 通知の持ち主は herdr。herdr の中では鳴らさず、外（素の WezTerm）でだけ鳴らす。
+# afplay を PATH の shim に差し替えて「呼ばれたか」をファイルで観測する。
+CSN_DIR="${TMP_ROOT}/stop-notify"
+mkdir -p "${CSN_DIR}/bin"
+CSN_CALLS="${CSN_DIR}/afplay-calls"
+CSN_SOUND="${CSN_DIR}/sound.aiff"
+: > "${CSN_SOUND}"
+cat > "${CSN_DIR}/bin/afplay" <<CSN_SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${CSN_CALLS}"
+exit 0
+CSN_SHIM
+chmod +x "${CSN_DIR}/bin/afplay"
+
+# afplay は hook がバックグラウンドで起動するので、記録されるまで少し待つ
+csn_wait_calls() {
+    _i=0
+    while [ "${_i}" -lt 40 ]; do
+        [ -s "${CSN_CALLS}" ] && return 0
+        _i=$((_i + 1))
+        sleep 0.05 2>/dev/null || return 1
+    done
+    return 1
+}
+
+# csn_run <HERDR_ENV の値 or "unset"> -> stdout を CSN_OUT に、exit code を csn_ec に
+csn_run() {
+    command rm -f "${CSN_CALLS}"
+    CSN_OUT="$(
+        if [ "$1" = "unset" ]; then unset HERDR_ENV; else export HERDR_ENV="$1"; fi
+        PATH="${CSN_DIR}/bin:${PATH}" CLAUDE_STOP_SOUND="${CSN_SOUND}" \
+            bash "${HOOKS_DIR}/claude-stop-notify.sh" 2>/dev/null
+    )"
+    csn_ec=$?
+}
+
+# herdr の中（HERDR_ENV=1）では鳴らさない（herdr のトーストと二重になるため）
+csn_run 1
+csn_wait_calls
+if [ "${csn_ec}" -eq 0 ] && [ ! -s "${CSN_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: herdr 内では鳴らさない(exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: herdr 内で鳴った（exit=${csn_ec}, calls=$(cat "${CSN_CALLS}" 2>/dev/null)）"
+fi
+
+# herdr の外では鳴らす（素の WezTerm で完了に気付ける）
+csn_run unset
+csn_wait_calls
+if [ "${csn_ec}" -eq 0 ] && [ -s "${CSN_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: herdr 外では鳴らす(exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: herdr 外で鳴らなかった（exit=${csn_ec}）"
+fi
+
+# herdr 判定は wezterm-status.sh と同じ `= "1"`。1 以外は herdr 外扱いで鳴らす
+# （片方が「herdr 内」もう片方が「herdr 外」と判断する食い違いを作らない）
+csn_run 0
+csn_wait_calls
+if [ "${csn_ec}" -eq 0 ] && [ -s "${CSN_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: HERDR_ENV=0 は herdr 外扱い(wezterm-status.sh と同判定)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: HERDR_ENV=0 で鳴らなかった（exit=${csn_ec}）"
+fi
+
+# stdout には何も出さない（bell/OSC は hook からは端末に届かず、stdout は Claude が拾う）
+if [ -z "${CSN_OUT}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: stdout に何も書かない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: stdout に出力（$(printf '%s' "${CSN_OUT}" | od -c | head -1)）"
+fi
+
+# 音声ファイルが読めなくても fail-open（exit 0）
+command rm -f "${CSN_CALLS}"
+CSN_EC_MISSING=0
+(
+    unset HERDR_ENV
+    PATH="${CSN_DIR}/bin:${PATH}" CLAUDE_STOP_SOUND="${CSN_DIR}/no-such-sound.aiff" \
+        bash "${HOOKS_DIR}/claude-stop-notify.sh" >/dev/null 2>&1
+) || CSN_EC_MISSING=$?
+if [ "${CSN_EC_MISSING}" -eq 0 ] && [ ! -s "${CSN_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 音声ファイルが無ければ鳴らさず exit 0(fail-open)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 音声ファイル欠損時（exit=${CSN_EC_MISSING}, calls=$(cat "${CSN_CALLS}" 2>/dev/null)）"
+fi
+
+echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
 [ "${FAIL}" -eq 0 ] || exit 1
 exit 0
