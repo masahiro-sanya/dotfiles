@@ -16,22 +16,6 @@ allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.
 
 > **launchd 事前実行チェック**: まず `cat ~/.claude/.morning-prep-last` を確認し、**今日の日付なら手順 1・2 は launchd（morning-prep）実行済みとして skip** する（サマリには「launchd 実行済み」と記す）。日付が古い・ファイルが無い場合は通常どおり実行する。
 
-### ⏳ 一時ステップ（時限・2026-07-16 追加／パッチ確認でき次第このブロックごと破棄）: Windows「LegacyHive」ゼロデイのパッチ監視
-
-背景: 2026-07-14 に Windows の User Profile Service の権限昇格ゼロデイ（通称 LegacyHive・PoC 公開済み・**CVE 未採番・修正パッチ未提供**）が公表され、社内 Windows 利用者に影響しうる。山口さんと「パッチを待つ」方針で合意済み（#dev-backend-times スレッド: https://light-inc-com.slack.com/archives/C05DZDD6QA2/p1784195710372629 ）。パッチ配布までの間、**毎朝リリース有無だけ確認する**。
-
-**investigator に委譲**して Web を確認させる（Web 検索は investigator が担い、main の文脈を汚さない。**冒頭バッチに相乗りさせてよい**）。investigator への指示:
-
-- 次を Web 検索し、**①修正パッチ配布 ②CVE 採番 ③JPCERT・IPA 注意喚起 ④実際の悪用観測** の4点の最新状況を、各ソースの日付と URL 付きの**要約**で返す:
-  - Microsoft Security Update Guide / MSRC（"User Profile Service" の elevation of privilege セキュリティ更新）
-  - 窓の杜（forest.watch.impress.co.jp）・The Hacker News の続報
-  - JPCERT/CC・IPA の注意喚起
-- 末尾に判定を1行: **「パッチ配布あり」／「まだ（未配布）」**。
-
-main の扱い:
-- **「まだ」なら**: 最終サマリに `⏳ Windows LegacyHive: パッチ未配布（継続監視）` と1行だけ出す。他は何もしない。
-- **「パッチ配布あり」なら**: (1) ユーザーに知らせる。(2) 山谷が上記スレッドで「パッチが出たら再共有します」と宣言済みなので、**スレッドへの続報投稿を促す**（投稿はユーザー承認後）。(3) この一時ステップの役目は完了 → **SKILL.md からこのブロックと最終サマリの `⏳` 行を削除してよいか確認**し、承認されたら削除する（実体は dotfiles リポの `claude/skills/morning/SKILL.md`・symlink 経由でライブ反映）。
-
 ### 1. Claude Code 本体を更新
 
 ```
@@ -151,7 +135,6 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
 7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件・fail-open <L> 件（または "今週実施済み" / "週初でないためスキップ"）
 8. 宣言: 投稿済み / ドラフト提示（または "見送り"）
-⏳ Windows LegacyHive: パッチ未配布（継続監視）／パッチ配布あり → 再共有促し＋本ステップ破棄提案（※パッチ確認後に一時ステップごと削除）
 ```
 
 ## 注意事項
