@@ -258,7 +258,6 @@
     "command": "~/.claude/statusline.sh",
     "padding": 1
   },
-  "preferredNotifChannel": "notifications_disabled",
   "enabledPlugins": {
     "slack@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true,
@@ -304,7 +303,8 @@
     "check-release-cross-repo@light-skills": true,
     "lhs@light-skills": true,
     "collect-feed@light-skills": true,
-    "check-release-full@light-skills": true
+    "check-release-full@light-skills": true,
+    "prod-alert-triage@light-skills": true
   },
   "extraKnownMarketplaces": {
     "light-skills": {
@@ -328,5 +328,6 @@
   },
   "alwaysThinkingEnabled": true,
   "theme": "dark",
+  "preferredNotifChannel": "notifications_disabled",
   "skipAutoPermissionPrompt": true
 }
