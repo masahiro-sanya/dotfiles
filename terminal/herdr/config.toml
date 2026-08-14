@@ -1,0 +1,39 @@
+onboarding = false
+
+[keys]
+# 右エンコーダ（Cornix）から回して注目順にエージェントへ飛ぶ用。
+# Cornix 側は LCTL(LSFT(KC_UP)) / LCTL(LSFT(KC_DOWN)) を直接送る（ファームは変更なし）。
+# workspace 送りから付け替えた。space を送ってから pane をマウスで選び直していたのを、
+# agent 一覧（space 跨ぎ・priority 順）を回して直接フォーカスする形に畳んでいる。
+# workspace の切替は prefix+w のピッカーに任せる。
+previous_agent = "ctrl+shift+up"
+next_agent = "ctrl+shift+down"
+
+# herdr の worktree 作成は使わない。置き場が ~/.herdr/worktrees 固定で、
+# 「リポ群と同じ親の worktrees/ に <リポ名>-wt<連番>」の運用と両立しないため。
+# worktree は従来どおり git worktree で作る。キーを空にして誤爆も塞ぐ。
+new_worktree = ""
+
+# 以下、[ui] の素のキーを先に置き、[ui.*] のサブテーブルは必ずその後ろに並べる。
+# 逆順にすると、あとから足した ui のキーが直前のサブテーブル配下に紛れ込み、
+# herdr は未知キーを黙って無視する（気付けるのは herdr config check だけ）。
+[ui]
+agent_panel_sort = "priority"
+
+# 各 workspace は 1 タブ運用なので、タブ帯を隠して 1 行稼ぐ。
+# 帯と一緒に「+」も消えるため、新規タブは prefix+c で作る。
+hide_tab_bar_when_single_tab = true
+
+# 通知の持ち主を herdr に一本化している（Claude 本体の通知と stop hook の音・バナーは停止）。
+[ui.toast]
+delivery = "system"
+
+# エージェント行に Claude のセッション名を出す。同じリポで複数走ると
+# workspace 名だけでは見分けが付かず、エンコーダ送りの飛び先が読めないため。
+[ui.sidebar.agents.rows_by_agent]
+claude = [["state_icon", "workspace"], ["terminal_title_stripped"]]
+
+[experimental]
+# かな入力中でも prefix(Ctrl+b) が効くよう、prefix 中だけ ASCII レイアウトへ
+# 退避して、抜けたら元の入力ソースへ戻す。macOS 限定・best-effort。
+switch_ascii_input_source_in_prefix = true

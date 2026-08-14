@@ -9,6 +9,7 @@ macOS 環境の設定ファイル群。
 | `shell/` | zsh 設定 (.zshrc, .zprofile, .zshenv) |
 | `git/` | .gitconfig, .gitignore_global |
 | `terminal/wezterm/` | WezTerm 設定 |
+| `terminal/herdr/` | herdr (エージェント multiplexer) 設定 |
 | `nvim/` | Neovim (LazyVim) 設定 |
 | `karabiner/` | Karabiner-Elements 設定 (HHKB キーリマップ) |
 | `editor/vscode/` | VS Code 設定 |

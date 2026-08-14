@@ -93,6 +93,14 @@ echo "--- WezTerm ---"
 backup_and_link "$DOTFILES_DIR/terminal/wezterm/wezterm.lua"  "$HOME/.config/wezterm/wezterm.lua"
 backup_and_link "$DOTFILES_DIR/terminal/wezterm/keybinds.lua" "$HOME/.config/wezterm/keybinds.lua"
 
+# --- herdr ---
+# ~/.config/herdr/ には socket / ログ / session.json も同居するため、
+# karabiner のようなディレクトリ symlink にはせず config.toml だけを張る。
+# 注意: `herdr config reset-keys` は config.toml を書き直すので、symlink が
+# 実体ファイルに置き換わることがある。使ったあとは ls -l で張り直しを確かめる。
+echo "--- herdr ---"
+backup_and_link "$DOTFILES_DIR/terminal/herdr/config.toml" "$HOME/.config/herdr/config.toml"
+
 # --- Neovim ---
 echo "--- Neovim ---"
 backup_and_link "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"

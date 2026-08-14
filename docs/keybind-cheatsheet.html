@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WezTerm + Neovim キーバインド チートシート</title>
+<title>WezTerm + herdr + Neovim キーバインド チートシート</title>
 <style>
   :root {
     --bg: #0d1117;
@@ -15,6 +15,7 @@
     --accent2: #3fb950;
     --accent3: #d2a8ff;
     --accent4: #f0883e;
+    --accent5: #39c5cf;
     --key-bg: #1f2937;
     --key-border: #374151;
     --highlight: #ffa65720;
@@ -125,6 +126,7 @@
   .wezterm-section .section-header { color: var(--accent); background: #58a6ff10; }
   .neovim-section .section-header { color: var(--accent2); background: #3fb95010; }
   .vim-section .section-header { color: var(--accent3); background: #d2a8ff10; }
+  .herdr-section .section-header { color: var(--accent5); background: #39c5cf10; }
 
   /* Table rows */
   .row {
@@ -212,7 +214,7 @@
 </head>
 <body>
 
-<h1>WezTerm + Neovim チートシート</h1>
+<h1>WezTerm + herdr + Neovim チートシート</h1>
 <p class="subtitle">Cmd+F またはフィルター検索でキーバインドを素早く検索</p>
 
 <div class="search-container">
@@ -224,6 +226,7 @@
 
 <div class="tab-nav">
   <button class="tab-btn active" data-tab="wezterm">WezTerm</button>
+  <button class="tab-btn" data-tab="herdr">herdr</button>
   <button class="tab-btn" data-tab="neovim">Neovim (LazyVim)</button>
   <button class="tab-btn" data-tab="vim">Vim 基本操作</button>
   <button class="tab-btn" data-tab="all">全て表示</button>
@@ -298,6 +301,101 @@
       <div class="row"><span class="key"><kbd>y</kbd></span><span class="desc">コピー</span></div>
       <div class="row"><span class="key"><kbd>Enter</kbd></span><span class="desc">コピーして終了</span></div>
       <div class="row"><span class="key"><kbd>Esc</kbd> / <kbd>q</kbd> / <kbd>Ctrl+c</kbd></span><span class="desc">コピーモード終了</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== herdr ===== -->
+<div class="tab-content" id="tab-herdr">
+  <div class="leader-info">Prefix キー: <kbd>Ctrl+b</kbd> <span style="color:var(--text-muted)">(tmux 式 / Ctrl+b を離してから次のキー)</span></div>
+  <div class="grid">
+    <div class="section herdr-section">
+      <div class="section-header">まず覚える</div>
+      <div class="row"><span class="key"><kbd>Ctrl+b</kbd></span><span class="desc">Prefix (これが全操作の起点)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>?</kbd></span><span class="desc">ヘルプ表示 (迷ったらこれ)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>q</kbd></span><span class="desc">デタッチ (中身は動いたまま裏へ)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>b</kbd></span><span class="desc">サイドバー表示 / 非表示</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>g</kbd></span><span class="desc">移動先を選ぶ (ナビゲートモード)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>s</kbd></span><span class="desc">設定画面</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+r</kbd></span><span class="desc">設定再読み込み</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>o</kbd></span><span class="desc">通知元のペインへ飛ぶ</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">Pane 操作</div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>v</kbd></span><span class="desc">縦に分割 (split_vertical)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>-</kbd></span><span class="desc">横に分割 (split_horizontal)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>h</kbd> <kbd>j</kbd> <kbd>k</kbd> <kbd>l</kbd></span><span class="desc">Pane 移動 (左 / 下 / 上 / 右)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Tab</kbd></span><span class="desc">次の Pane へ順送り</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+Tab</kbd></span><span class="desc">前の Pane へ</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>z</kbd></span><span class="desc">Pane ズーム (最大化 / 復帰)</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>r</kbd></span><span class="desc">リサイズモード</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>x</kbd></span><span class="desc">Pane を閉じる</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+p</kbd></span><span class="desc">Pane 名を変更</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>e</kbd></span><span class="desc">スクロールバックをエディタで開く</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">タブ操作</div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>c</kbd></span><span class="desc">新規タブ</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>n</kbd></span><span class="desc">次のタブ</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>p</kbd></span><span class="desc">前のタブ</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>1</kbd> ~ <kbd>9</kbd></span><span class="desc">タブ番号で切替</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+t</kbd></span><span class="desc">タブ名を変更</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+x</kbd></span><span class="desc">タブを閉じる</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">Workspace 操作</div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>w</kbd></span><span class="desc">Workspace 一覧から選ぶ</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+n</kbd></span><span class="desc">新規 Workspace</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+w</kbd></span><span class="desc">Workspace 名を変更</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+d</kbd></span><span class="desc">Workspace を閉じる</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">git worktree ※この環境では使わない</div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+g</kbd></span><span class="desc">無効化済み (new_worktree = "")</span></div>
+      <div class="row"><span class="key">理由</span><span class="desc">作成先が ~/.herdr/worktrees 固定で、リポ群と同じ親の worktrees/ に置く運用と噛み合わない</span></div>
+      <div class="row"><span class="key">代わりに</span><span class="desc">git worktree で &lt;リポ名&gt;-wt&lt;連番&gt; を作る</span></div>
+      <div class="row"><span class="key">残る導線</span><span class="desc">コンテキストメニューの New worktree と herdr worktree create からは呼べる。使わない</span></div>
+      <div class="row"><span class="key">open_worktree / remove_worktree</span><span class="desc">既定では未割り当て。割り当てない</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">ナビゲートモード中 (Prefix g)</div>
+      <div class="row"><span class="key"><kbd>↑</kbd> / <kbd>↓</kbd></span><span class="desc">Workspace を上 / 下へ</span></div>
+      <div class="row"><span class="key"><kbd>h</kbd> / <kbd>l</kbd></span><span class="desc">Pane を左 / 右へ</span></div>
+      <div class="row"><span class="key"><kbd>j</kbd> / <kbd>k</kbd></span><span class="desc">Pane を下 / 上へ</span></div>
+      <div class="row"><span class="key"><kbd>←</kbd> / <kbd>→</kbd></span><span class="desc">左 / 右の Pane にフォーカス (常に有効)</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">この環境で割り当て済み</div>
+      <div class="row"><span class="key"><kbd>Ctrl+Shift+↑</kbd> / <kbd>Ctrl+Shift+↓</kbd></span><span class="desc">previous_agent / next_agent。Cornix 右エンコーダを回すとこれが飛ぶ</span></div>
+      <div class="row"><span class="key">送り順</span><span class="desc">Workspace 跨ぎ・サイドバーの並び順 (agent_panel_sort = "priority")</span></div>
+      <div class="row"><span class="key">Workspace 切替</span><span class="desc">エンコーダから外した。<kbd>Prefix</kbd> <kbd>w</kbd> のピッカーを使う</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">未割り当て (要るときに config で足す)</div>
+      <div class="row"><span class="key">previous_workspace / next_workspace</span><span class="desc">Workspace を前後に送る</span></div>
+      <div class="row"><span class="key">focus_agent</span><span class="desc">番号でエージェントに飛ぶ (例 prefix+alt+1..9)</span></div>
+      <div class="row"><span class="key">switch_workspace</span><span class="desc">番号で Workspace 切替 (例 prefix+shift+1..9)</span></div>
+      <div class="row"><span class="key">last_pane</span><span class="desc">直前の Pane と行き来</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">この環境の config.toml</div>
+      <div class="row"><span class="key">実体</span><span class="desc">dotfiles の terminal/herdr/config.toml。~/.config/herdr/config.toml は setup.sh が張る symlink</span></div>
+      <div class="row"><span class="key">サイドバー行</span><span class="desc">Claude 行に Workspace 名＋セッション名を出す (ui.sidebar.agents.rows_by_agent)</span></div>
+      <div class="row"><span class="key">タブ帯</span><span class="desc">1 タブのときは隠す。新規タブは <kbd>Prefix</kbd> <kbd>c</kbd> (hide_tab_bar_when_single_tab)</span></div>
+      <div class="row"><span class="key">かな入力中の Prefix</span><span class="desc">Prefix 中だけ ASCII 入力ソースへ退避 (experimental)</span></div>
+      <div class="row"><span class="key">通知</span><span class="desc">herdr の system トースト一本。Claude 本体の通知は停止</span></div>
+      <div class="row"><span class="key">注意</span><span class="desc">herdr config reset-keys はファイルを書き直すので symlink が実体化しうる</span></div>
+    </div>
+    <div class="section herdr-section">
+      <div class="section-header">カスタマイズ / 注意</div>
+      <div class="row"><span class="key">雛形の参照</span><span class="desc">herdr --default-config &gt; /tmp/herdr-default.toml で書き出して見る。~/.config/herdr/config.toml へ直接リダイレクトしない (symlink 越しに dotfiles の実体が既定値で潰れる)</span></div>
+      <div class="row"><span class="key">反映</span><span class="desc"><kbd>Prefix</kbd> <kbd>Shift+r</kbd> か herdr server reload-config (再起動不要)</span></div>
+      <div class="row"><span class="key">書いたら確認</span><span class="desc">herdr config check。未知キー・無効なキーバインドは起動時エラーにならず黙って無視される</span></div>
+      <div class="row"><span class="key">独自コマンド</span><span class="desc">[[keys.command]] で追加。type は shell / pane / popup</span></div>
+      <div class="row"><span class="key">popup の例</span><span class="desc">key="prefix+alt+g" type="popup" command="lazygit"</span></div>
+      <div class="row"><span class="key">WezTerm との関係</span><span class="desc">WezTerm の Leader は Ctrl+q なので衝突しない</span></div>
+      <div class="row"><span class="key">中のアプリとの関係</span><span class="desc">herdr 内では Ctrl+b を herdr が先取りする</span></div>
+      <div class="row"><span class="key">直接キーの相性</span><span class="desc">確実なのは ctrl+英字 / F キー / 明示的な修飾キー。alt・cmd・記号は端末依存</span></div>
     </div>
   </div>
 </div>
