@@ -1,8 +1,12 @@
 onboarding = false
 
 [keys]
-# 右エンコーダ（Cornix）から回して注目順にエージェントへ飛ぶ用。
-# Cornix 側は LCTL(LSFT(KC_UP)) / LCTL(LSFT(KC_DOWN)) を直接送る（ファームは変更なし）。
+# 注目順にエージェントへ飛ぶ用。Cornix 側の送り元は 2 系統で、どちらも同じキーを送る。
+#   - 右エンコーダの上 / 下回し
+#   - Layer 1 の x / c（x = previous, c = next）
+# 実体は LCTL(LSFT(KC_UP)) / LCTL(LSFT(KC_DOWN))。キーマップはキーボードのフラッシュ側に
+# あり dotfiles では持たない（PC を移っても付いてくる）。食い違ったらファームを焼き直すより、
+# Vial で実機が何を送っているか見て、この 2 行を寄せるほうが安い。
 # workspace 送りから付け替えた。space を送ってから pane をマウスで選び直していたのを、
 # agent 一覧（space 跨ぎ・priority 順）を回して直接フォーカスする形に畳んでいる。
 # workspace の切替は prefix+w のピッカーに任せる。
@@ -24,6 +28,14 @@ agent_panel_sort = "priority"
 # 帯と一緒に「+」も消えるため、新規タブは prefix+c で作る。
 hide_tab_bar_when_single_tab = true
 
+# 分割ペインを並べると枠だけでは誰が誰か分からないので、検出したエージェント名を
+# 枠に出す（手動のペイン名を付けたときはそちらが優先）。
+show_agent_labels_on_pane_borders = true
+
+# 既定はタブ作成のたびに名前を聞く。1 workspace 1 タブ運用でタブ名を使わないため、
+# 聞かずに自動名で作る。
+prompt_new_tab_name = false
+
 # 通知の持ち主を herdr に一本化している（Claude 本体の通知と stop hook の音・バナーは停止）。
 [ui.toast]
 delivery = "system"
@@ -37,3 +49,8 @@ claude = [["state_icon", "workspace"], ["terminal_title_stripped"]]
 # かな入力中でも prefix(Ctrl+b) が効くよう、prefix 中だけ ASCII レイアウトへ
 # 退避して、抜けたら元の入力ソースへ戻す。macOS 限定・best-effort。
 switch_ascii_input_source_in_prefix = true
+
+# 変換候補ウィンドウがカーソルを見失う問題への対処。全エージェントに効かせると
+# 副作用が読めないので、日本語を打つ claude / codex のペインだけに限定する。
+reveal_hidden_cursor_for_cjk_ime = true
+cjk_ime_agents = ["claude", "codex"]
