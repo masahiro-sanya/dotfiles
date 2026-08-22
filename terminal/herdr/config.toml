@@ -37,8 +37,12 @@ show_agent_labels_on_pane_borders = true
 prompt_new_tab_name = false
 
 # 通知の持ち主を herdr に一本化している（Claude 本体の通知と stop hook の音・バナーは停止）。
+# macOS の通知センターへ出す delivery = "system" は、フォアグラウンドで見ているときにも
+# バナーが被って邪魔だったのでやめた。ポップアップは出さず、完了は herdr の
+# サイドバー（state_icon）と [ui.sound] の音で拾う。
+# 値は off / herdr（herdr 内のトースト）/ terminal / system。既定は off。
 [ui.toast]
-delivery = "system"
+delivery = "off"
 
 # エージェント行に Claude のセッション名を出す。同じリポで複数走ると
 # workspace 名だけでは見分けが付かず、エンコーダ送りの飛び先が読めないため。
