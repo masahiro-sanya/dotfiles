@@ -917,6 +917,91 @@ else
 fi
 
 echo ""
+echo "== codex-pane-title.sh =="
+
+CPT_DIR="${TMP_ROOT}/codex-pane-title"
+mkdir -p "${CPT_DIR}"
+CPT_CALLS="${CPT_DIR}/herdr-calls"
+cat > "${CPT_DIR}/herdr" <<CPT_SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${CPT_CALLS}"
+exit 0
+CPT_SHIM
+chmod +x "${CPT_DIR}/herdr"
+
+# cpt_run <event> <JSON> [env指定: "no-herdr" で HERDR_ENV を落とす]
+# -> stdout を CPT_OUT に、exit code を cpt_ec に、herdr 呼び出しを CPT_CALLS に
+#
+# HERDR_ENV / HERDR_PANE_ID はテストが明示的に与える。このテスト自体が herdr の
+# ペインの中から走ることがあり、環境を継ぐと「herdr 外では no-op」の検証が
+# 素通りする（実際に一度これで誤って通った）。
+cpt_run() {
+    command rm -f "${CPT_CALLS}"
+    CPT_OUT="$(
+        if [ "${3:-}" = "no-herdr" ]; then unset HERDR_ENV; else export HERDR_ENV=1; fi
+        printf '%s' "$2" | HERDR_PANE_ID=wZ:p1 HERDR_BIN="${CPT_DIR}/herdr" \
+            bash "${HOOKS_DIR}/codex-pane-title.sh" "$1" 2>/dev/null
+    )"
+    cpt_ec=$?
+}
+
+# プロンプトの先頭行だけをタイトルにする（2 行目以降と先頭の空行は捨てる）
+cpt_run UserPromptSubmit "$(/usr/bin/jq -cn '{hook_event_name:"UserPromptSubmit", prompt:"\n\n  一行目のタイトル\n二行目は捨てる"}')"
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--title 一行目のタイトル --token title=一行目のタイトル" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: 先頭行をタイトルとして報告する"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 先頭行の報告（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# 長いプロンプトは切り詰める（サイドバーは幅が狭い。全文を渡さない）
+cpt_run UserPromptSubmit "$(/usr/bin/jq -cn '{hook_event_name:"UserPromptSubmit", prompt:("あ" * 60)}')"
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "…" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: 長いプロンプトを切り詰める"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 切り詰め（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# SessionEnd で消す（ペインが使い回されたとき死んだセッションの題が残らないように）
+cpt_run SessionEnd '{"hook_event_name":"SessionEnd"}'
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--clear-title" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: SessionEnd でタイトルを消す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: SessionEnd の消去（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# SessionStart でも消す（codex が SessionEnd を出さない版でも、次の起動で消える）
+cpt_run SessionStart '{"hook_event_name":"SessionStart"}'
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--clear-title" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: SessionStart でタイトルを消す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: SessionStart の消去（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# 空白だけのプロンプトでは何も報告しない（空のタイトルで上書きしない）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"   "}'
+if [ "${cpt_ec}" -eq 0 ] && [ ! -s "${CPT_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 空プロンプトでは報告しない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 空プロンプト（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# herdr の外では完全に no-op（素の端末で codex を動かしても副作用を出さない）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"x"}' no-herdr
+if [ "${cpt_ec}" -eq 0 ] && [ ! -s "${CPT_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: herdr 外では何もしない(exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: herdr 外で動いた（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# stdout には何も出さない（UserPromptSubmit の stdout はプロンプトへ注入される）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"タイトル"}'
+if [ -z "${CPT_OUT}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: stdout に何も書かない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: stdout に出力（${CPT_OUT}）"
+fi
+
+echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
 [ "${FAIL}" -eq 0 ] || exit 1
 exit 0

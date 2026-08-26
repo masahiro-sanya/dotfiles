@@ -10,8 +10,14 @@ onboarding = false
 # workspace 送りから付け替えた。space を送ってから pane をマウスで選び直していたのを、
 # agent 一覧（space 跨ぎ・priority 順）を回して直接フォーカスする形に畳んでいる。
 # workspace の切替は prefix+w のピッカーに任せる。
-previous_agent = "ctrl+shift+up"
-next_agent = "ctrl+shift+down"
+#
+# 配列の 2 つ目は Cornix を経由せずキーボードから叩く用。
+# 値は配列で複数バインドを持てる（herdr config check は配列の要素ごとに構文を見る）。
+# prefix+j / prefix+k は focus_pane_down / focus_pane_up なので、
+# 同じ向きのまま shift を足して「pane 送り → agent 送り」に対応させる。
+# 直接キー（ctrl+j 等）は Claude Code や readline と食い合うので prefix 経由にする。
+previous_agent = ["ctrl+shift+up", "prefix+shift+k"]
+next_agent = ["ctrl+shift+down", "prefix+shift+j"]
 
 # herdr の worktree 作成は使わない。置き場が ~/.herdr/worktrees 固定で、
 # 「リポ群と同じ親の worktrees/ に <リポ名>-wt<連番>」の運用と両立しないため。
@@ -40,10 +46,32 @@ prompt_new_tab_name = false
 [ui.toast]
 delivery = "system"
 
-# エージェント行に Claude のセッション名を出す。同じリポで複数走ると
-# workspace 名だけでは見分けが付かず、エンコーダ送りの飛び先が読めないため。
+# エージェント行の 2 行目に「エージェント名バッジ＋セッションのタイトル」を出す。
+# 同じリポで複数走ると workspace 名だけでは見分けが付かず、エンコーダ送りの
+# 飛び先が読めないため。
+#
+# バッジは各行の同じ位置に来る短い語（"claude" / "codex"）なので、色の付いた
+# 縦の列ができて、どの行がどのエージェントかがぱっと見で分かる。
+# 色は彩度を落として bold も外してある。目立たせるのが目的ではなく、
+# 行の地に対して淡く差が付いていれば見分けは付く。もっと薄くしたいときは
+# dim = true を足す（さらに一段落ちる）。
+# herdr 0.8.0 のトークン装飾は { token = "...", fg = "#RRGGBB", bold = ..., dim = ... }
+# の 4 つだけで背景色は無いため、地の色を変える代わりにこの形にしている。
+# fg は #RGB / #RRGGBB のみ（"cyan" 等の名前は不可）。
+# タイトル本文には色を付けない。以前ここを色付きにしたら一覧がその色で
+# 埋まって地の色と変わらず、かえって見づらかった。色は短いバッジだけに置く。
+# 1 行目の workspace にも色を付けない。ここは idle/working/blocked の状態色が
+# 出ている場所で、fg を指定すると状態が読めなくなる。
+#
+# codex は端末タイトルがリポ名そのまま（1 行目の workspace 名と重複）で中身が
+# 分からないので、claude/hooks/codex-pane-title.sh がプロンプト先頭行を
+# 表示専用メタデータとして報告し、それを $title トークンで出す。
+# メタデータの title は terminal_title 系には合流しない（agent list では別フィールド
+# として出る）ので、terminal_title_stripped ではなく $title を指す必要がある。
+# 他の agent を足すときは canonical ID（gemini / cursor / droid など）をキーにする。
 [ui.sidebar.agents.rows_by_agent]
-claude = [["state_icon", "workspace"], ["terminal_title_stripped"]]
+claude = [["state_icon", "workspace"], [{ token = "agent", fg = "#c9a07a", bold = false, dim = false }, "terminal_title_stripped"]]
+codex = [["state_icon", "workspace"], [{ token = "agent", fg = "#7fa8b8", bold = false, dim = false }, "$title"]]
 
 [experimental]
 # かな入力中でも prefix(Ctrl+b) が効くよう、prefix 中だけ ASCII レイアウトへ
