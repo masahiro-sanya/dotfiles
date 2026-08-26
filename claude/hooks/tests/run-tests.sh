@@ -115,12 +115,30 @@ make_repo "${REPO_PLAIN}" main
 
 echo "== guard-bash-command.sh =="
 
-assert 2 guard-bash-command.sh "grep はブロック" "$(bash_json "grep foo bar.txt")"
+assert 0 guard-bash-command.sh "単一ファイルの grep は許可（rg にしても速度も gitignore も効かない）" "$(bash_json "grep foo bar.txt")"
 assert 2 guard-bash-command.sh "&& 後の grep はブロック" "$(bash_json "cd /tmp && grep -rn foo src/")"
 assert 0 guard-bash-command.sh "git grep は許可（コマンド位置でない）" "$(bash_json "git grep foo")"
 assert 0 guard-bash-command.sh "引数中の grep は許可" "$(bash_json "rg -n 'use grep here' docs/")"
 assert 2 guard-bash-command.sh "find はブロック" "$(bash_json "find . -name '*.go'")"
 assert 0 guard-bash-command.sh "fd は許可" "$(bash_json "fd -e go")"
+
+# grep: コードベース検索の形だけをブロックする（2026-08 の絞り込み）
+assert 2 guard-bash-command.sh "再帰 grep はブロック（-rn）" "$(bash_json "grep -rn foo src/")"
+assert 2 guard-bash-command.sh "再帰 grep はブロック（-nr の順でも）" "$(bash_json "grep -nr foo src/")"
+assert 2 guard-bash-command.sh "--include 付き grep はブロック" "$(bash_json "grep --include=*.swift -ln foo .")"
+assert 2 guard-bash-command.sh "グロブ指定の grep はブロック" "$(bash_json "grep -l foo */*.jsonl")"
+assert 2 guard-bash-command.sh "末尾スラッシュのディレクトリ指定はブロック" "$(bash_json "grep -n foo docs/")"
+assert 0 guard-bash-command.sh "grep --version は許可（-version を再帰と誤認しない）" "$(bash_json "grep --version")"
+assert 0 guard-bash-command.sh "行番号付けの grep -n は許可" "$(bash_json "grep -n foo /tmp/one.md")"
+assert 0 guard-bash-command.sh "件数カウントの grep -c は許可" "$(bash_json "grep -c foo /tmp/one.md")"
+assert 0 guard-bash-command.sh "-ln は再帰ではないので許可" "$(bash_json "grep -ln foo /tmp/one.md")"
+
+# find: fd に置き換えられない形は素通しする（2026-08 の絞り込み）
+assert 0 guard-bash-command.sh "-exec 付き find は許可（fd に等価形なし）" "$(bash_json "find . -name '*.log' -exec ls {} ;")"
+assert 0 guard-bash-command.sh "-mtime 付き find は許可" "$(bash_json "find /tmp -mtime -7")"
+assert 0 guard-bash-command.sh "ルート全体探索の find は許可" "$(bash_json "find / -name foo.sh 2>/dev/null")"
+assert 0 guard-bash-command.sh "ホーム全体探索の find は許可" "$(bash_json "find ~ -name foo.sh")"
+assert 2 guard-bash-command.sh "特定ディレクトリの -name 検索はブロック（fd 化できる）" "$(bash_json "find src -name '*.go'")"
 
 # パイプの受け側の grep は許可する（別コマンドの出力の絞り込み＝ rg に替えても効果がない）。
 # find は stdin を読まずファイルシステムを見るため、パイプ後でもブロックを続ける。
@@ -517,7 +535,7 @@ check_not_logged() {
     fi
 }
 
-check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep foo bar.txt")"
+check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep -rn foo src/")"
 check_logged "素の rm ブロックを記録する" "bare-rm-blocked" guard-bash-command.sh "$(bash_json "rm foo.txt")"
 check_logged "監査ログ改変ブロックを記録する" "audit-log-tamper-blocked" guard-bash-command.sh "$(bash_json "command rm -f ~/.claude/guard-hits.log")"
 check_logged "dangerously-skip ブロックを記録する" "dangerously-skip-blocked" guard-bash-command.sh "$(bash_json "claude --dangerously-skip-permissions -p task")"
