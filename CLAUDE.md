@@ -6,7 +6,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 
 ## claude/settings.json
 
-- `model` / `effortLevel` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` / `skipDangerousModePermissionPrompt` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**
+- `model` / `effortLevel` / `tui` / `skipWorkflowUsageWarning` / `agentPushNotifEnabled` / `skipDangerousModePermissionPrompt` / `autoMode` は Claude Code が書き込む実行時フィールド。**絶対にコミットしない**（`autoMode` は作業中のリポの GCP プロジェクト名・バケット名・内部ドメイン・private リポ名を溜め込む。ここは公開リポなので特に危ない）
 - 除去は `setup.sh` が登録する git clean filter が自動で行う（index からだけ除去し、ライブ設定は無傷）。キー一覧の定義元は `git/strip-claude-runtime.sh` の `RUNTIME_KEYS` ただ1つで、pre-commit / CI は `--check` を呼ぶだけ。**consumer 側にキー一覧を書き足さない**（食い違うと commit が詰まる）
 - pre-commit にランタイムフィールドで止められたら、filter 未登録を疑う（`git config --get filter.strip-claude-runtime.clean` が空なら `setup.sh` を実行）
 - コミット前に `jq . claude/settings.json` で JSON 妥当性を確認する

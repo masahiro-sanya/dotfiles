@@ -25,7 +25,7 @@ set -u
 
 # 除外するランタイムフィールド(top-level キー)。
 # 追加・削除したら CLAUDE.md の「絶対にコミットしない」記述も更新すること。
-RUNTIME_KEYS="model effortLevel tui skipWorkflowUsageWarning agentPushNotifEnabled skipDangerousModePermissionPrompt"
+RUNTIME_KEYS="model effortLevel tui skipWorkflowUsageWarning agentPushNotifEnabled skipDangerousModePermissionPrompt autoMode"
 
 MODE="${1:---filter}"
 
