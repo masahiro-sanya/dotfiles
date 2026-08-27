@@ -10,12 +10,18 @@
         "hooks": [
           { "type": "command", "command": "if [ -x ~/.codex/herdr-agent-state.sh ]; then bash ~/.codex/herdr-agent-state.sh session; fi", "timeout": 10 }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/codex-pane-title.sh SessionStart", "timeout": 5 }
+        ]
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
-          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh UserPromptSubmit", "timeout": 5 }
+          { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh UserPromptSubmit", "timeout": 5 },
+          { "type": "command", "command": "bash ~/.claude/hooks/codex-pane-title.sh UserPromptSubmit", "timeout": 5 }
         ]
       }
     ],
@@ -58,6 +64,13 @@
       {
         "hooks": [
           { "type": "command", "command": "WEZTERM_STATUS_AGENT=codex bash ~/.claude/hooks/wezterm-status.sh Stop", "timeout": 5 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash ~/.claude/hooks/codex-pane-title.sh SessionEnd", "timeout": 5 }
         ]
       }
     ]

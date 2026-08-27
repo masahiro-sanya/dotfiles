@@ -74,16 +74,45 @@ cmd_stripped="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -pe "s/\"[^\"]*\"//gs
 # 実測: grep 差し戻し 342 件のうち 156 件がこの形で、往復コストだけ払っていた。
 # 検知漏れ許容: `true | grep -rn pattern src/` のような前置きパイプ経由の検索は素通りする。
 grep_pos='(^|[;&(]|\$\(|`)[[:space:]]*(command[[:space:]]+)?(sudo[[:space:]]+)?'
-if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${grep_pos}(grep|egrep|fgrep)([[:space:]]|$)"; then
+
+# さらに「コードベース検索の形をしている grep」だけに絞る。
+# ルールの狙いは速度と gitignore 考慮なので、どちらも効かない使い方は対象外:
+#   - 単一ファイルの grep（grep -n pattern path/to/one.md）
+#   - 引数を取らない grep（grep --version、パイプ後の再絞り込み）
+# 実測: 発火 260 件のうち狙いに合致したのは 40 件（15%）で、残り 85% は
+# ブロック→書き直しの往復コストだけ払っていた（guard-hits.log 2026-07-08〜08-26）。
+# 検知する形（次の区切りまでの範囲に現れたとき）:
+#   -r/-R を含む短オプション（-rn, -rln, -nr 等）/ --recursive
+#   --include / --exclude-dir（複数ファイル走査が前提）
+#   グロブ * / 末尾が / のディレクトリ指定
+# オプション判定と探索対象判定は前置きの形が違うので 2 本に分ける。
+# オプション側は「区切り直後 or 空白直後の - 」に限定する。単に [[:space:]]- とすると
+# grep 直後の空白を消費済みで -rn を拾えず、逆に空白を要求しないと --version の
+# "-version" が -(ve)(r)(sion) として再帰オプションに誤マッチする（両方とも実測で確認）。
+grep_opt='[[:space:]]+([^|;&]*[[:space:]])?(-[[:alnum:]]*[rR][[:alnum:]]*([[:space:]]|$)|--recursive|--include|--exclude-dir)'
+grep_target='[[:space:]][^|;&]*(\*|[^[:space:]]/([[:space:]]|$))'
+if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${grep_pos}(grep|egrep|fgrep)${grep_opt}" \
+    || printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${grep_pos}(grep|egrep|fgrep)${grep_target}"; then
     log_block "grep-blocked" "${cmd}"
-    echo "grep は使わない（CLAUDE.md）。rg（ripgrep）で書き直してください。例: rg -n 'pattern' path/" >&2
+    echo "コードベース検索に grep は使わない（CLAUDE.md）。rg（ripgrep）で書き直してください。例: rg -n 'pattern' path/" >&2
     exit 2
 fi
 
 # find は stdin を読まないため、パイプの受け側でもファイルシステム検索のまま＝ cmd_pos のまま検知する。
-if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)"; then
+#
+# ただし fd に置き換えられない形は素通しする（実測 186 件中 76 件がこれに該当）:
+#   - -exec / -mtime / -newer / -size / -delete / -prune / -depth
+#     ＝ fd に等価形が無い、または意味が変わるもの
+#   - find / や find ~ の全体探索
+#     ＝ コードベース検索ではなく、fd は隠しファイル・ignore の既定が違って等価にならない
+# 残る「特定ディレクトリ配下の -name/-iname 検索」だけが fd の素直な置き換え対象。
+find_skip='([^|;&]*(-exec|-mtime|-newer|-size|-delete|-prune|-depth([[:space:]]|$)))'
+find_root='[[:space:]]+(/|~|\$HOME)([[:space:]]|$)'
+if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)" \
+    && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find[[:space:]]${find_skip}" \
+    && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find${find_root}"; then
     log_block "find-blocked" "${cmd}"
-    echo "find は使わない（CLAUDE.md）。fd で書き直す: find <dir> -name/-iname 'X' → fd 'X' <dir>（小文字パターンは既定で大文字小文字無視）。gitignore/隠しファイルも含めた全数探索は fd -H -I 'X' <dir>。拡張子検索は fd -e go" >&2
+    echo "ディレクトリ配下のファイル検索に find は使わない（CLAUDE.md）。fd で書き直す: find <dir> -name/-iname 'X' → fd 'X' <dir>（小文字パターンは既定で大文字小文字無視）。gitignore/隠しファイルも含めるなら fd -H -I 'X' <dir>。拡張子検索は fd -e go。-exec/-mtime 等と / 直下の全体探索はブロックしていない" >&2
     exit 2
 fi
 

@@ -367,6 +367,7 @@
     <div class="section herdr-section">
       <div class="section-header">この環境で割り当て済み</div>
       <div class="row"><span class="key"><kbd>Ctrl+Shift+↑</kbd> / <kbd>Ctrl+Shift+↓</kbd></span><span class="desc">previous_agent / next_agent。Cornix の右エンコーダ回しと Layer 1 の <kbd>x</kbd> / <kbd>c</kbd> がこれを送る</span></div>
+      <div class="row"><span class="key"><kbd>Prefix</kbd> <kbd>Shift+k</kbd> / <kbd>Prefix</kbd> <kbd>Shift+j</kbd></span><span class="desc">同じ previous_agent / next_agent をキーボードから。<kbd>Prefix</kbd> <kbd>k</kbd> / <kbd>j</kbd> の Pane 送りに Shift を足した形</span></div>
       <div class="row"><span class="key">送り順</span><span class="desc">Workspace 跨ぎ・サイドバーの並び順 (agent_panel_sort = "priority")</span></div>
       <div class="row"><span class="key">Workspace 切替</span><span class="desc">エンコーダから外した。<kbd>Prefix</kbd> <kbd>w</kbd> のピッカーを使う</span></div>
     </div>
@@ -391,6 +392,7 @@
       <div class="row"><span class="key">雛形の参照</span><span class="desc">herdr --default-config &gt; /tmp/herdr-default.toml で書き出して見る。~/.config/herdr/config.toml へ直接リダイレクトしない (symlink 越しに dotfiles の実体が既定値で潰れる)</span></div>
       <div class="row"><span class="key">反映</span><span class="desc"><kbd>Prefix</kbd> <kbd>Shift+r</kbd> か herdr server reload-config (再起動不要)</span></div>
       <div class="row"><span class="key">書いたら確認</span><span class="desc">herdr config check。未知キー・無効なキーバインドは起動時エラーにならず黙って無視される</span></div>
+      <div class="row"><span class="key">1 アクションに複数キー</span><span class="desc">値を配列にする (例 previous_agent = ["ctrl+shift+up", "prefix+shift+k"])。config check は要素ごとに構文を見る</span></div>
       <div class="row"><span class="key">独自コマンド</span><span class="desc">[[keys.command]] で追加。type は shell / pane / popup</span></div>
       <div class="row"><span class="key">popup の例</span><span class="desc">key="prefix+alt+g" type="popup" command="lazygit"</span></div>
       <div class="row"><span class="key">WezTerm との関係</span><span class="desc">WezTerm の Leader は Ctrl+q なので衝突しない</span></div>

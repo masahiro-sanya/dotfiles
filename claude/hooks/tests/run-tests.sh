@@ -115,12 +115,30 @@ make_repo "${REPO_PLAIN}" main
 
 echo "== guard-bash-command.sh =="
 
-assert 2 guard-bash-command.sh "grep はブロック" "$(bash_json "grep foo bar.txt")"
+assert 0 guard-bash-command.sh "単一ファイルの grep は許可（rg にしても速度も gitignore も効かない）" "$(bash_json "grep foo bar.txt")"
 assert 2 guard-bash-command.sh "&& 後の grep はブロック" "$(bash_json "cd /tmp && grep -rn foo src/")"
 assert 0 guard-bash-command.sh "git grep は許可（コマンド位置でない）" "$(bash_json "git grep foo")"
 assert 0 guard-bash-command.sh "引数中の grep は許可" "$(bash_json "rg -n 'use grep here' docs/")"
 assert 2 guard-bash-command.sh "find はブロック" "$(bash_json "find . -name '*.go'")"
 assert 0 guard-bash-command.sh "fd は許可" "$(bash_json "fd -e go")"
+
+# grep: コードベース検索の形だけをブロックする（2026-08 の絞り込み）
+assert 2 guard-bash-command.sh "再帰 grep はブロック（-rn）" "$(bash_json "grep -rn foo src/")"
+assert 2 guard-bash-command.sh "再帰 grep はブロック（-nr の順でも）" "$(bash_json "grep -nr foo src/")"
+assert 2 guard-bash-command.sh "--include 付き grep はブロック" "$(bash_json "grep --include=*.swift -ln foo .")"
+assert 2 guard-bash-command.sh "グロブ指定の grep はブロック" "$(bash_json "grep -l foo */*.jsonl")"
+assert 2 guard-bash-command.sh "末尾スラッシュのディレクトリ指定はブロック" "$(bash_json "grep -n foo docs/")"
+assert 0 guard-bash-command.sh "grep --version は許可（-version を再帰と誤認しない）" "$(bash_json "grep --version")"
+assert 0 guard-bash-command.sh "行番号付けの grep -n は許可" "$(bash_json "grep -n foo /tmp/one.md")"
+assert 0 guard-bash-command.sh "件数カウントの grep -c は許可" "$(bash_json "grep -c foo /tmp/one.md")"
+assert 0 guard-bash-command.sh "-ln は再帰ではないので許可" "$(bash_json "grep -ln foo /tmp/one.md")"
+
+# find: fd に置き換えられない形は素通しする（2026-08 の絞り込み）
+assert 0 guard-bash-command.sh "-exec 付き find は許可（fd に等価形なし）" "$(bash_json "find . -name '*.log' -exec ls {} ;")"
+assert 0 guard-bash-command.sh "-mtime 付き find は許可" "$(bash_json "find /tmp -mtime -7")"
+assert 0 guard-bash-command.sh "ルート全体探索の find は許可" "$(bash_json "find / -name foo.sh 2>/dev/null")"
+assert 0 guard-bash-command.sh "ホーム全体探索の find は許可" "$(bash_json "find ~ -name foo.sh")"
+assert 2 guard-bash-command.sh "特定ディレクトリの -name 検索はブロック（fd 化できる）" "$(bash_json "find src -name '*.go'")"
 
 # パイプの受け側の grep は許可する（別コマンドの出力の絞り込み＝ rg に替えても効果がない）。
 # find は stdin を読まずファイルシステムを見るため、パイプ後でもブロックを続ける。
@@ -517,7 +535,7 @@ check_not_logged() {
     fi
 }
 
-check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep foo bar.txt")"
+check_logged "grep ブロックを記録する" "grep-blocked" guard-bash-command.sh "$(bash_json "grep -rn foo src/")"
 check_logged "素の rm ブロックを記録する" "bare-rm-blocked" guard-bash-command.sh "$(bash_json "rm foo.txt")"
 check_logged "監査ログ改変ブロックを記録する" "audit-log-tamper-blocked" guard-bash-command.sh "$(bash_json "command rm -f ~/.claude/guard-hits.log")"
 check_logged "dangerously-skip ブロックを記録する" "dangerously-skip-blocked" guard-bash-command.sh "$(bash_json "claude --dangerously-skip-permissions -p task")"
@@ -896,6 +914,91 @@ if [ "${CSN_EC_MISSING}" -eq 0 ] && [ ! -s "${CSN_CALLS}" ]; then
     PASS=$((PASS + 1)); echo "  ok: 音声ファイルが無ければ鳴らさず exit 0(fail-open)"
 else
     FAIL=$((FAIL + 1)); echo "  NG: 音声ファイル欠損時（exit=${CSN_EC_MISSING}, calls=$(cat "${CSN_CALLS}" 2>/dev/null)）"
+fi
+
+echo ""
+echo "== codex-pane-title.sh =="
+
+CPT_DIR="${TMP_ROOT}/codex-pane-title"
+mkdir -p "${CPT_DIR}"
+CPT_CALLS="${CPT_DIR}/herdr-calls"
+cat > "${CPT_DIR}/herdr" <<CPT_SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${CPT_CALLS}"
+exit 0
+CPT_SHIM
+chmod +x "${CPT_DIR}/herdr"
+
+# cpt_run <event> <JSON> [env指定: "no-herdr" で HERDR_ENV を落とす]
+# -> stdout を CPT_OUT に、exit code を cpt_ec に、herdr 呼び出しを CPT_CALLS に
+#
+# HERDR_ENV / HERDR_PANE_ID はテストが明示的に与える。このテスト自体が herdr の
+# ペインの中から走ることがあり、環境を継ぐと「herdr 外では no-op」の検証が
+# 素通りする（実際に一度これで誤って通った）。
+cpt_run() {
+    command rm -f "${CPT_CALLS}"
+    CPT_OUT="$(
+        if [ "${3:-}" = "no-herdr" ]; then unset HERDR_ENV; else export HERDR_ENV=1; fi
+        printf '%s' "$2" | HERDR_PANE_ID=wZ:p1 HERDR_BIN="${CPT_DIR}/herdr" \
+            bash "${HOOKS_DIR}/codex-pane-title.sh" "$1" 2>/dev/null
+    )"
+    cpt_ec=$?
+}
+
+# プロンプトの先頭行だけをタイトルにする（2 行目以降と先頭の空行は捨てる）
+cpt_run UserPromptSubmit "$(/usr/bin/jq -cn '{hook_event_name:"UserPromptSubmit", prompt:"\n\n  一行目のタイトル\n二行目は捨てる"}')"
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--title 一行目のタイトル --token title=一行目のタイトル" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: 先頭行をタイトルとして報告する"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 先頭行の報告（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# 長いプロンプトは切り詰める（サイドバーは幅が狭い。全文を渡さない）
+cpt_run UserPromptSubmit "$(/usr/bin/jq -cn '{hook_event_name:"UserPromptSubmit", prompt:("あ" * 60)}')"
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "…" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: 長いプロンプトを切り詰める"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 切り詰め（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# SessionEnd で消す（ペインが使い回されたとき死んだセッションの題が残らないように）
+cpt_run SessionEnd '{"hook_event_name":"SessionEnd"}'
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--clear-title" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: SessionEnd でタイトルを消す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: SessionEnd の消去（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# SessionStart でも消す（codex が SessionEnd を出さない版でも、次の起動で消える）
+cpt_run SessionStart '{"hook_event_name":"SessionStart"}'
+if [ "${cpt_ec}" -eq 0 ] && grep -q -- "--clear-title" "${CPT_CALLS}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: SessionStart でタイトルを消す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: SessionStart の消去（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# 空白だけのプロンプトでは何も報告しない（空のタイトルで上書きしない）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"   "}'
+if [ "${cpt_ec}" -eq 0 ] && [ ! -s "${CPT_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 空プロンプトでは報告しない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 空プロンプト（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# herdr の外では完全に no-op（素の端末で codex を動かしても副作用を出さない）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"x"}' no-herdr
+if [ "${cpt_ec}" -eq 0 ] && [ ! -s "${CPT_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: herdr 外では何もしない(exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: herdr 外で動いた（exit=${cpt_ec}, calls=$(cat "${CPT_CALLS}" 2>/dev/null)）"
+fi
+
+# stdout には何も出さない（UserPromptSubmit の stdout はプロンプトへ注入される）
+cpt_run UserPromptSubmit '{"hook_event_name":"UserPromptSubmit","prompt":"タイトル"}'
+if [ -z "${CPT_OUT}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: stdout に何も書かない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: stdout に出力（${CPT_OUT}）"
 fi
 
 echo ""
