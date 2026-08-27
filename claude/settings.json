@@ -266,7 +266,7 @@
     "fix-pr-reviews@light-skills": true,
     "member-report-manager@light-skills": false,
     "gcp-monitoring@light-skills": false,
-    "claude-session-manager@light-skills": false,
+    "claude-session-manager@light-skills": true,
     "stack-pr-merge@light-skills": true,
     "dojo@light-skills": false,
     "slack-tools@light-skills": false,
