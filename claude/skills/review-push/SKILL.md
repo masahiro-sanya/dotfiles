@@ -37,7 +37,7 @@ feature branch であることを確認する（main 直コミット禁止）。
 ### 4. 通過記録
 
 ```bash
-git rev-parse HEAD > "$(git rev-parse --absolute-git-dir)/claude-reviewed-sha"
+git rev-parse HEAD >| "$(git rev-parse --absolute-git-dir)/claude-reviewed-sha"
 ```
 
 **この記録は「いまの HEAD がレビュー通過済み」の証明。** 記録後に何かコミットしたら hook に止められるので手順 2 からやり直す。
