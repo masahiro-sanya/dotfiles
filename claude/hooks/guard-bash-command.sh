@@ -121,6 +121,15 @@ fi
 # 正規の回避形である `command rm` / `sudo rm`（どちらもエイリアスを迂回する）は許可したいので、
 # cmd_pos の command/sudo プレフィックス付きアンカーは使わず、区切り直後の rm だけを検知する。
 # `command rm` は rm が区切り直後に来ない（command の後）ため、この pattern には一致しない。
+#
+# grep/find と違い、判定は cmd_stripped ではなく生の cmd で行う（クォート内の言及でも発火する）。
+# これは意図的な据え置き。実測: guard-hits.log 2026-07-08〜08-27 の発火 231 件のうち、ログ上で
+# 再現できた 156 件を分類すると cmd_stripped に替えて救えるのは 2 件（1.3%）だけだった
+# （どちらも rg の検索パターンに rm -rf と書いた回）。grep は 85%・find は 41% が無駄で絞る
+# 根拠があったが、ここには無い。加えてこれは作法ではなく「消えたつもりで消えていない」実害を
+# 止める安全ガードなので、緩める基準は本来もっと高い。さらに判定不能だった 75 件に含まれる
+# heredoc 本文中の rm（10 件）は quote-strip では剥がれず、替えても救えない。
+# 誤爆が増えたら下の cmd を cmd_stripped にするだけで済むが、いま動かす理由は無い。
 rm_pos='(^|[|;&(]|\$\(|`)[[:space:]]*'
 if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${rm_pos}rm([[:space:]]|$)"; then
     log_block "bare-rm-blocked" "${cmd}"
