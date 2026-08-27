@@ -10,6 +10,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 - 除去は `setup.sh` が登録する git clean filter が自動で行う（index からだけ除去し、ライブ設定は無傷）。キー一覧の定義元は `git/strip-claude-runtime.sh` の `RUNTIME_KEYS` ただ1つで、pre-commit / CI は `--check` を呼ぶだけ。**consumer 側にキー一覧を書き足さない**（食い違うと commit が詰まる）
 - pre-commit にランタイムフィールドで止められたら、filter 未登録を疑う（`git config --get filter.strip-claude-runtime.clean` が空なら `setup.sh` を実行）
 - コミット前に `jq . claude/settings.json` で JSON 妥当性を確認する
+- `alwaysThinkingEnabled: false`（トークン節約のため thinking を切っている）は **effort 指定と衝突しうる**。モデルによっては API が 400 `effort 'X' is not supported when thinking is disabled` を返し、CLI は `remove "alwaysThinkingEnabled": false from settings` と案内する。このエラーが出たら effort を下げるのではなく**このキーを消す**（＝thinking を戻す）のが正解。UI の Thinking トグルを ON にしても同じ（トグルは false を書くか、キー自体を消すかの 2 状態）
 - SessionStart の `herdr-agent-state.sh` を呼ぶエントリ（`codex/hooks.json` 側も同じ）は **herdr が自分で注入・上書きする外部所有の配線**。JSON なのでファイルに印を置けないためここに書く。`herdr update` や再インストールのあとは `git diff` を見て、二重注入や身に覚えのない再整形が入っていないか確かめる
 
 ## マシン固有の絶対パス
