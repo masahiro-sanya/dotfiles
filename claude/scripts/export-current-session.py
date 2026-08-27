@@ -4,8 +4,10 @@
 claude-session-manager プラグインの export は cwd プロジェクト内の「mtime 最新 JSONL」を
 source にするため、同一プロジェクトで複数タブ（複数セッション）が走っていると別セッションを
 書き出してしまう。このスクリプトは環境変数 CLAUDE_CODE_SESSION_ID で「今いるセッション」を
-確実に指定して書き出す。出力形式・保存先はプラグインと揃えてあり、import-claude-session で
-そのまま読み込める。
+確実に指定して書き出す。出力形式・保存先はプラグインと揃えてあるので、import-claude-session で
+そのまま読み込める。ただし読み戻し口はプラグイン側にしか無く、settings.json で
+claude-session-manager を無効にしている間は書き出しだけができる状態になる（読み戻したいときは
+プラグインを有効に戻す）。書き出し自体はプラグインに依存しないのでこのまま動く。
 
 使い方:
   export-current-session.py [保存先ディレクトリ]
