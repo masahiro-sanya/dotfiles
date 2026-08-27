@@ -65,6 +65,26 @@ fmt_time() {
   fi
 }
 
+# 使用率(0-100の整数)から消費バーと危険度色を作り、BAR / HEAT に入れる。
+# 消費バー(6文字): 使用率に比例して埋まる(使うほど上限に近づく)。少しでも使えば最低1マス。
+# 色: 使用率が高いほど危険（緑<50 / 黄<80 / 赤）。レート制限と文脈使用率で共通の見た目にする。
+heat_bar() {
+  hb_pct="$1"
+  hb_len=6
+  hb_filled=$((hb_pct * hb_len / 100))
+  [ "${hb_filled}" -gt "${hb_len}" ] && hb_filled="${hb_len}"
+  [ "${hb_pct}" -gt 0 ] && [ "${hb_filled}" -eq 0 ] && hb_filled=1
+  BAR=""
+  hb_i=1
+  while [ "${hb_i}" -le "${hb_len}" ]; do
+    if [ "${hb_i}" -le "${hb_filled}" ]; then BAR="${BAR}█"; else BAR="${BAR}░"; fi
+    hb_i=$((hb_i + 1))
+  done
+  if [ "${hb_pct}" -ge 80 ]; then HEAT="\033[31m"
+  elif [ "${hb_pct}" -ge 50 ]; then HEAT="\033[33m"
+  else HEAT="\033[32m"; fi
+}
+
 # --- レート制限 (5h / 週): statusline JSON の rate_limits があるときだけ2行目に出す ---
 # rate_limits は Claude.ai サブスク(Pro/Max)かつ初回API応答後のみ入る。
 # 欠落時(APIキー運用・/clear直後・冒頭)は何も足さない fail-open。
@@ -78,21 +98,9 @@ render_window() {
   used_int="${used_int:-0}"
   [ "${used_int}" -lt 0 ] && used_int=0
   [ "${used_int}" -gt 100 ] && used_int=100
-  # 消費バー(6文字): 使用率に比例して埋まる(使うほどリミットに近づく)。少しでも使えば最低1マス
-  blen=6
-  filled=$((used_int * blen / 100))
-  [ "${filled}" -gt "${blen}" ] && filled="${blen}"
-  [ "${used_int}" -gt 0 ] && [ "${filled}" -eq 0 ] && filled=1
-  bar=""
-  i=1
-  while [ "${i}" -le "${blen}" ]; do
-    if [ "${i}" -le "${filled}" ]; then bar="${bar}█"; else bar="${bar}░"; fi
-    i=$((i + 1))
-  done
-  # 色: 使用率が高いほど危険（緑<50 / 黄<80 / 赤）
-  if [ "${used_int}" -ge 80 ]; then wc="\033[31m"
-  elif [ "${used_int}" -ge 50 ]; then wc="\033[33m"
-  else wc="\033[32m"; fi
+  heat_bar "${used_int}"
+  bar="${BAR}"
+  wc="${HEAT}"
   winlen="$4"
   rstr=$(fmt_time "${reset}")
 
@@ -156,8 +164,25 @@ if [ -n "${EFFORT}" ]; then
   EFFORT_SEG="\033[2meffort${RESET} ${ecolor}${egauge}${RESET} ${ecolor}${EFFORT}${RESET}"
 fi
 
+# --- 文脈使用率（statusline JSON の .context_window.used_percentage）---
+# 1 ターンのコストは文脈サイズにほぼ比例する（cache read + cache write で Opus コストの約 7 割）。
+# 文脈が上限近くに貼り付いたまま何百ターンも回すのが週次枠の最大の消費源なので常時見えるようにする。
+# 赤（80%〜）は「1 ターンあたりが最も高い状態」の合図＝話題が変わるなら /clear を挟む。
+# 欠落時（セッション冒頭・非対応クライアント）は空=非表示の fail-open。
+CTX_SEG=""
+ctx_int="${PCT%%.*}"
+case "${ctx_int}" in
+  '' | *[!0-9]*) ctx_int="" ;;
+esac
+if [ -n "${ctx_int}" ] && [ "${ctx_int}" -gt 0 ]; then
+  [ "${ctx_int}" -gt 100 ] && ctx_int=100
+  heat_bar "${ctx_int}"
+  CTX_SEG="\033[2mctx${RESET} ${HEAT}${BAR}${RESET} ${HEAT}${ctx_int}%${RESET}"
+fi
+
 RL_LINE=""
 [ -n "${EFFORT_SEG}" ] && RL_LINE="${EFFORT_SEG}"
+[ -n "${CTX_SEG}" ] && RL_LINE="${RL_LINE}${RL_LINE:+   }${CTX_SEG}"
 render_window "5h" "${RL5_PCT}" "${RL5_RESET}" 18000
 render_window "週" "${RL7_PCT}" "${RL7_RESET}" 604800
 [ -n "${FABLE_WARN}" ] && RL_LINE="${RL_LINE}${RL_LINE:+   }${FABLE_WARN}"
