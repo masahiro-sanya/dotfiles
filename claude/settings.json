@@ -326,7 +326,7 @@
       }
     }
   },
-  "alwaysThinkingEnabled": false,
+  "alwaysThinkingEnabled": true,
   "theme": "dark",
   "preferredNotifChannel": "notifications_disabled",
   "skipAutoPermissionPrompt": true
