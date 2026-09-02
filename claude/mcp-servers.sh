@@ -7,6 +7,8 @@
 #   - notion : initial OAuth in browser on first connect
 #   - google-dev-knowledge : depends on ~/.claude/hooks/dev-knowledge-headers.sh
 #   - terraform : requires Docker Desktop running
+#   - freee : browser OAuth on first connect
+#   - cloud-sql-dev-sanya : NOT registered here (see the commented block below)
 #
 # Slack MCP is provided by the official `slack@claude-plugins-official` plugin
 # (remote HTTP MCP at https://mcp.slack.com/mcp, browser OAuth on first connect).
@@ -79,10 +81,24 @@ add_stdio drawio    npx -y @drawio/mcp@1.1.8
 add_stdio context7  npx -y @upstash/context7-mcp@2.1.6
 add_stdio gcloud    npx -y @google-cloud/gcloud-mcp@0.5.3
 add_stdio terraform docker run -i --rm hashicorp/terraform-mcp-server
+# NOTE: drawio / terraform are currently registered at *project* scope for
+# palmu-devops on the primary machine (see `claude mcp list` there). Keeping
+# them here at user scope is harmless for a fresh machine; narrow the scope by
+# hand if you want the same layout.
+add_stdio chrome-devtools npx -y chrome-devtools-mcp@1.8.0
+
+# cloud-sql-dev-sanya (palmu dev Cloud SQL, read-only, IAM auth) is intentionally
+# not registered by this script: it needs a one-time GRANT on the DB side and
+# fails with CONNECTION_CLOSED every session until that is done. Register it by
+# hand once `claude/bin/cloud-sql-mcp.sh` (header comment) is satisfied. Run it
+# from anywhere inside this repo (the path must be absolute; `$0` would resolve
+# to the interactive shell, not this file):
+#   claude mcp add --scope user cloud-sql-dev-sanya -- "$(git rev-parse --show-toplevel)/claude/bin/cloud-sql-mcp.sh" dev-sanya
 
 # --- http servers ---
 add_http notion               https://mcp.notion.com/mcp
 add_http google-dev-knowledge https://developerknowledge.googleapis.com/mcp
+add_http freee                https://mcp.freee.co.jp/mcp
 
 # --- plugin-provided MCP ---
 # Slack MCP (official plugin). OAuth happens on first connect inside Claude Code.
@@ -98,4 +114,6 @@ MCP servers registered. Manual follow-up:
      light-inc-com workspace (admin approval already granted). Restart Claude
      Code after install so the plugin loads.
   5. light-skills plugins (palmu-api-doc etc.): installed from the light-skills repo.
+  6. freee: first connect opens browser OAuth
+  7. cloud-sql-dev-sanya: register by hand after the DB GRANT (see comment above)
 EOF

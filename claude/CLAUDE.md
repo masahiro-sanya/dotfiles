@@ -86,6 +86,7 @@ LHS に上げるものは Notion ページと対にする。片方だけ作ら�
 - 仕様が閉じた実装スライスの実行（実装＋自己検証まで。コミット/push はしない）→ **impl-runner**（Sonnet 固定・書き込み可）
 - 差分レビューの一次実行（深刻度順の指摘リストを返す。修正・コミットはしない）→ **review-runner**（Sonnet 固定・read 専用。認証・権限・課金・本番データ・削除・外部送信・DB スキーマ変更/マイグレーション・並行処理/トランザクションのいずれかに触れる差分は、review-runner の結果を main（Opus）が読み直す）
 - PR レビュー指摘の読み取り・構造化（返信はしない）→ **pr-review-triage**（read 専用。書き込みは fix-pr-reviews / main）
+- 技術記事フィード収集（collect-feed を丸ごと。morning から使用）→ **feed-collector**（書き込み可・収集レポートだけ返す）
 - 広域なコード探索の fan-out → **Explore**（組み込み）
 - 現在の文脈を引き継いだ独立・並行作業 → **fork**
 - 上のどれにも当てはまらない汎用タスクのみ → general-purpose
