@@ -22,6 +22,7 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 ## claude/hooks/
 
 - 変更したら必ず `bash -n <script>` と `bash claude/hooks/tests/run-tests.sh` を実行する
+- **編集した瞬間にライブ環境の hook になる**（symlink）。PreToolUse の hook が構文エラーだと `bash` が起動できず、**Bash ツールが全部止まって自分で直せなくなる**（2026-09-03 に実例。Read / Edit ツールで復旧した）。パッチスクリプト経由で書くときは、生成した文字列がシェルの引用符を壊していないか（`\x27` のつもりが生の `'` になる等）を書く前に確認し、詰まったら Bash を諦めて Edit ツールで直す
 - macOS 標準の bash 3.2 互換で書く。変数展開は `${var}` 形式に統一（bash 3.2 は `$var` 直後の全角文字で変数名解釈が壊れる）
 - fail-open 設計: 入力異常では exit 0 で許可に倒す。ただし `~/.claude/hooks-error.log` に痕跡を残す
 - hook に手で JSON を流して動作確認するときは `GUARD_HITS_LOG=$(mktemp)`（必要に応じ `HOOKS_ERROR_LOG` も）を付け、本物のテレメトリを汚さない（run-tests.sh は退避済みだが、単発の手動実行は素通しで実ログに混ざる。2026-07-31 に実例あり）
@@ -33,5 +34,4 @@ macOS 環境設定リポ。`setup.sh` が各設定を `$HOME` 配下へ symlink 
 
 ## シェル操作の注意
 
-- この環境の `rm` は `-i` エイリアス。非対話実行では削除されないまま exit 0 になるため **`command rm -f` を使い、削除後に ls で裏取りする**
-- zsh は noclobber 設定。上書きリダイレクトは `>|` を使う
+- 内容はグローバルの「このマシンのシェル（全リポ共通）」（`claude/CLAUDE.md`＝`~/.claude/CLAUDE.md`）へ移した。エイリアス由来の無言失敗・noclobber・zsh の単語分割はそちらを見る（ここに書いていたせいで他リポで同じ失敗を繰り返したため、二重に書かない）
