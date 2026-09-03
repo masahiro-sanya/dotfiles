@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{TITLE}}</title>
+<style>
+/* 目が疲れないよう暗い配色で出す。純黒・純白は使わない（コントラストが強すぎる）。
+   地の色相は head の script がタイトルから決めて上書きする。ここはその既定値 */
+:root{
+  --bg:#171a20; --surface:#1e222b; --fig:#1a1e26;
+  --ink:#e2e6ee; --ink-sub:#b4bbc9; --ink-mute:#8b93a3;
+  --line:#313743; --line-soft:#272c35; --th:#242a35;
+  --node:#394151; --node-line:#6d7a90; --node-ink:#f0f3f9;
+  --accent:#7aa2f7; --warn:#e0a458; --ask:#5fd0be;
+  /* 囲みの背景と枠は地の色に混ぜて作る。色相が変わっても浮かない */
+  --accent-soft:color-mix(in oklab, var(--accent) 15%, var(--bg));
+  --warn-soft:color-mix(in oklab, var(--warn) 13%, var(--bg));
+  --warn-line:color-mix(in oklab, var(--warn) 32%, var(--bg));
+  --ask-soft:color-mix(in oklab, var(--ask) 13%, var(--bg));
+  --ask-line:color-mix(in oklab, var(--ask) 32%, var(--bg));
+  --radius:10px;
+  --font:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;min-width:0}
+html{-webkit-text-size-adjust:100%;color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);
+  font-size:16px;line-height:1.85;letter-spacing:.01em;
+  padding:56px max(20px,env(safe-area-inset-left)) 96px;
+  /* 日本語を文節単位で折り返す。未対応ブラウザでは無視されるだけ */
+  word-break:auto-phrase;text-wrap:pretty}
+/* 短い塊は行の長さを揃える。1語だけ次行に落ちるのを防ぐ */
+h1,h2,h3,.card .t,.step,.figcap,.tldr p{text-wrap:balance}
+.wrap{width:min(1360px, 94vw);margin:0 auto}
+/* 地の文だけは行長を抑える。表・図・カードは wrap いっぱいを使う */
+body > .wrap > p{max-width:76ch}
+
+h1{font-size:29px;line-height:1.4;margin:0 0 10px;letter-spacing:-.01em}
+.meta{font-size:13px;color:var(--ink-mute);margin:0 0 40px}
+h2{font-size:21px;line-height:1.45;margin:64px 0 18px;padding-bottom:10px;border-bottom:2px solid var(--line)}
+h2 .section-num{display:inline-block;min-width:2.1em;color:var(--accent);font-variant-numeric:tabular-nums}
+h3{font-size:17px;margin:32px 0 10px}
+p{margin:0 0 16px}
+a{color:var(--accent)}
+strong{font-weight:700}
+
+/* 一言でいうと */
+.tldr{background:var(--accent-soft);border-left:4px solid var(--accent);
+  border-radius:0 var(--radius) var(--radius) 0;padding:22px 26px;margin:0 0 24px}
+.tldr .label{display:block;font-size:12px;font-weight:700;color:var(--accent);
+  letter-spacing:.08em;margin-bottom:8px}
+.tldr p{font-size:18px;line-height:1.75;margin:0}
+
+/* 読む前に知っておくこと */
+.headline{background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:var(--radius);
+  padding:20px 24px;margin:0 0 24px}
+.headline .label{display:block;font-size:12px;font-weight:700;color:var(--warn);
+  letter-spacing:.08em;margin-bottom:8px}
+.headline ul{margin:0;padding-left:1.25em}
+.headline li{margin:0 0 8px}
+.headline li:last-child{margin-bottom:0}
+
+/* 設計判断カード等 */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px 26px;margin:0 0 18px}
+.card > :last-child{margin-bottom:0}
+.card .id{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:700;
+  color:var(--bg);background:var(--ink-sub);border-radius:5px;padding:3px 9px;margin-right:10px;
+  vertical-align:2px;letter-spacing:.04em}
+.card.u .id{background:var(--warn);color:var(--bg)}
+.card.q .id{background:var(--ask);color:var(--bg)}
+.card .t{font-size:17px;font-weight:700;line-height:1.5}
+.card .why{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.card .why .label{font-size:12px;font-weight:700;color:var(--ink-mute);
+  letter-spacing:.06em;margin-right:8px}
+
+/* カードを2段組みにする。1枚が短いときだけ使う（長文を2列にすると読みにくい） */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:0 0 18px}
+.cards .card{margin:0}
+
+/* 直線的な流れ */
+.flow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin:0 0 20px}
+.step{flex:1 1 240px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:14px 16px;font-size:14px;line-height:1.65}
+.step b{display:block;font-size:12px;color:var(--accent);letter-spacing:.06em;margin-bottom:5px}
+
+/* 図 */
+figure{margin:0 0 24px;background:var(--fig);border:1px solid var(--line);
+  border-radius:var(--radius);padding:22px;overflow-x:auto}
+figure svg{max-width:100%;height:auto;display:block;margin:0 auto}
+.figcap{font-size:13px;color:var(--ink-mute);margin-top:14px;line-height:1.7}
+
+/* 表 */
+.tw{overflow-x:auto;margin:0 0 24px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:13px 18px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.75}
+td:first-child{white-space:nowrap}
+td code{white-space:nowrap}
+th{background:var(--th);font-size:12px;letter-spacing:.05em;color:var(--ink-sub);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+
+/* コード */
+pre.code{background:color-mix(in oklab, var(--bg) 82%, #000);color:#dfe4ee;border-radius:var(--radius);padding:18px 20px;
+  overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.75;margin:0 0 24px}
+/* .hi は行末の改行を span の内側に入れる。外に出すと下に空行が入る */
+pre.code .hi{display:block;background:rgba(96,165,250,.22);
+  box-shadow:inset 3px 0 0 #60a5fa;margin:0 -20px;padding:0 20px}
+code{font-family:var(--mono);font-size:.92em;background:var(--line-soft);color:var(--ink-sub);border-radius:4px;padding:2px 6px}
+pre.code code{background:none;padding:0}
+
+/* 深掘りの案内 */
+.ask{background:var(--ask-soft);border:1px solid var(--ask-line);border-radius:var(--radius);
+  padding:20px 24px;margin:56px 0 0;font-size:15px}
+.ask b{color:var(--ask)}
+
+@media (max-width:640px){
+  body{padding:36px 16px 72px;font-size:15px}
+  td:first-child{white-space:normal}
+  h1{font-size:24px} h2{font-size:19px;margin-top:48px} .tldr p{font-size:16px}
+  .card,.tldr,.headline,.ask{padding:18px 18px}
+  .cards{grid-template-columns:1fr}
+}
+</style>
+<script>
+/* 地の色は文書ごとに変える。タイトルのハッシュから選ぶので、同じページを開き直しても同じ色になる。
+   ?hue=<0-359> を付けると手で指定できる */
+(function(){
+  var HUES=[218,258,288,196,152,96,28,348];  /* 藍・菫・葡萄・浅葱・深緑・苔・琥珀・臙脂 */
+  var t=document.title||'', h=2166136261;
+  for(var i=0;i<t.length;i++){ h=(h^t.charCodeAt(i))*16777619>>>0; }
+  var H=HUES[h%HUES.length];
+  var q=new URLSearchParams(location.search).get('hue');
+  if(q!==null && q!=='' && isFinite(+q)) H=+q;  /* ?hue= だけだと +'' が 0 になり赤に落ちる */
+  var S=24;  /* 彩度。上げすぎると読み疲れるので 20〜26 の範囲で */
+  function c(s,l){ return 'hsl('+H+' '+Math.max(s,0)+'% '+l+'%)'; }
+  var v={'--bg':c(S,8.5), '--surface':c(S-4,13.5), '--fig':c(S-2,11), '--th':c(S-4,17),
+         '--line':c(S-4,25), '--line-soft':c(S-4,18),
+         '--ink':c(S-16,92), '--ink-sub':c(S-14,74), '--ink-mute':c(S-14,60),
+         '--node':c(S-8,27), '--node-line':c(S-12,48), '--node-ink':c(S-18,95)};
+  for(var k in v) document.documentElement.style.setProperty(k, v[k]);
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+{{BODY}}
+</div>
+
+<script>
+/* 図の枚数とページ高さは Mermaid より先に、CDN と無関係に出す。
+   下の module に同居させると、図が0枚のページや CDN に届かない環境で
+   高さが取れず、検証が「壊れている」と誤判定してしまう */
+(function(){
+  var d=document.documentElement;
+  var pres=document.querySelectorAll('pre.mermaid');
+  d.setAttribute('data-mermaid-total', String(pres.length));
+  window.__markHeight=function(){
+    d.setAttribute('data-page-height', String(Math.ceil(d.scrollHeight)));
+  };
+  window.__markHeight();
+  /* 図が無ければ Mermaid の完了を待つ理由が無い */
+  if(!pres.length){ d.setAttribute('data-mermaid-ok','0'); d.setAttribute('data-mermaid-ready','1'); }
+})();
+</script>
+
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({startOnLoad:false, securityLevel:'strict', theme:'base',
+  fontFamily:'-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",sans-serif',
+  themeVariables:(function(){
+    // ノードは figure の面より明るくする。同じ暗さだと箱の輪郭が沈んで図に見えない
+    var g=getComputedStyle(document.documentElement);
+    var v=function(n){ return g.getPropertyValue(n).trim(); };
+    return {background:v('--fig'), primaryColor:v('--node'), primaryTextColor:v('--node-ink'),
+      primaryBorderColor:v('--node-line'), lineColor:v('--node-line'), textColor:v('--node-ink'),
+      secondaryColor:v('--th'), tertiaryColor:v('--surface'),
+      clusterBkg:v('--bg'), clusterBorder:v('--line'),
+      edgeLabelBackground:v('--fig'), fontSize:'14px'};
+  })()});
+const nodes=[...document.querySelectorAll('pre.mermaid')];
+let ok=0;
+for(let i=0;i<nodes.length;i++){
+  // id は必ず明示する。Mermaid の自動採番は連続描画で衝突し、後の図が前の図を消す
+  try{
+    const {svg}=await mermaid.render('fig-'+i, nodes[i].textContent);
+    const fig=document.createElement('div'); fig.innerHTML=svg;
+    nodes[i].replaceWith(fig.firstElementChild);
+    ok++;
+  }catch(e){
+    /* 1枚の記法エラーで残りの図まで巻き添えにしない。
+       Mermaid は失敗時に「Syntax error」の svg を同じ id で本文へ差し込むので、
+       それを消してから元の pre を残す（検証が成功と数えないようにするため） */
+    const stray=document.getElementById('dfig-'+i); if(stray) stray.remove();
+    nodes[i].setAttribute('data-mermaid-error', String((e && e.message) || e));
+  }
+}
+document.documentElement.setAttribute('data-mermaid-ok', String(ok));
+document.documentElement.setAttribute('data-mermaid-ready','1');
+window.__markHeight();
+</script>
+</body>
+</html>
