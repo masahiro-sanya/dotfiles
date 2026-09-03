@@ -1,7 +1,7 @@
 ---
 name: feed-collector
 description: 技術記事フィード収集（collect-feed スキル）を丸ごと実行し、収集レポートだけ返す専任エージェント（書き込み可能）。設定読み込み → 巡回 → 重複除外 → 評価 → Notion 登録 → 🚨時 Slack 通知 → light-inc 横断調査まで完遂する。morning や単発のフィード収集を、config 読み・Notion クエリ・巡回ログといったノイズから main の文脈を隔離したいときに使う。
-tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, Skill, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__notion__notion-create-pages, mcp__notion__notion-update-page, mcp__notion__notion-query-database-view, mcp__notion__notion-query-data-sources, mcp__plugin_slack_slack__slack_read_channel, mcp__plugin_slack_slack__slack_search_public, mcp__plugin_slack_slack__slack_send_message
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, Skill, mcp__notion__notion-search, mcp__notion__notion-fetch, mcp__notion__notion-create-pages, mcp__notion__notion-update-page, mcp__notion__notion-query-data-sources, mcp__plugin_slack_slack__slack_read_channel, mcp__plugin_slack_slack__slack_search_public, mcp__plugin_slack_slack__slack_send_message
 model: sonnet
 ---
 

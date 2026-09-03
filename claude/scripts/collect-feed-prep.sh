@@ -195,7 +195,7 @@ fi
 
 prompt='技術記事フィード収集を実行して: Skill ツールで collect-feed:collect-feed を引数なしで起動し、フローを最後まで完遂する（設定読み込み→古い記事のアーカイブ→ソース巡回→重複除外→フィルタ→評価・分類→Notion登録→🚨確認必須記事がある時のみ #dev-times 通知→light-inc 横断調査→結果報告）。ここは main セッションなので Step 4 の Workflow 並列巡回がそのまま使える。スキルの規約（公開日検証をスキップしない・上限ルール・個人名を出さない・palmu/チーム視点）を厳守する。🚨該当が1件も無ければ Slack には何も投稿しない。完了したら (1) Step 10 の収集レポート全文を ~/.claude/collect-feed-report.md に Write で保存し（冒頭に実行日 '"${today}"' を記す）、(2) 最終出力にレポート要約と、permission 拒否やツール不可など実行できなかった部分があれば正直に明記する。登録していないものを登録したと言わない。'
 
-allowed_tools='Read,Glob,Grep,Write,WebFetch,WebSearch,Skill,Workflow,Task,TodoWrite,Bash(date:*),mcp__notion__notion-search,mcp__notion__notion-fetch,mcp__notion__notion-create-pages,mcp__notion__notion-update-page,mcp__notion__notion-query-database-view,mcp__notion__notion-query-data-sources,mcp__plugin_slack_slack__slack_read_channel,mcp__plugin_slack_slack__slack_search_public,mcp__plugin_slack_slack__slack_send_message'
+allowed_tools='Read,Glob,Grep,Write,WebFetch,WebSearch,Skill,Workflow,Task,TodoWrite,Bash(date:*),mcp__notion__notion-search,mcp__notion__notion-fetch,mcp__notion__notion-create-pages,mcp__notion__notion-update-page,mcp__notion__notion-query-data-sources,mcp__plugin_slack_slack__slack_read_channel,mcp__plugin_slack_slack__slack_search_public,mcp__plugin_slack_slack__slack_send_message'
 
 # 1 回分の収集。成功なら 0、失敗なら last_reason に理由を入れて 1 を返す
 last_reason=""
