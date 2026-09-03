@@ -1,7 +1,7 @@
 ---
 name: daily-report
 description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）を踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
-allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
+allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date *), Bash(fd *), Bash(rg *), Bash(git log *), Bash(~/.claude/skills/morning/session-status.py *), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
 ---
 
 # 日報サイクル
@@ -15,8 +15,8 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bas
 
 - 「今日やること」「日報 朝」など**開始時** → 朝モード（宣言）
 - 「途中経過」「中間チェック」「日報 昼」など**日中** → 昼モード（途中経過チェック）。宣言との突き合わせと軌道修正だけで、採点・Notion・Slack 投稿はしない
-- 「日報」「今日のまとめ」など**終了時** → 夜モード(振り返り)。当日ファイルに宣言が無ければ「宣言なし」として進める（催促しない）
-- 「評価チェックだけ」「評価軸レビュー」→ **評価のみモード**。夜モードのうち step 1・2・3a・3b（実績収集）＋ step 5（採点）だけを実行し、日報本体は組まず Slack 投稿もしない（Notion ログへの追記のみ）
+- 「日報」「今日のまとめ」など**終了時** → 夜モード(振り返り)。当日ファイルに宣言が無ければ「宣言なし」として進める（催促しない）。`## 宣言（下書き）` しか無ければ下書きと突き合わせる
+- 「評価チェックだけ」「評価軸レビュー」→ **評価のみモード**。夜モードのうち step 0〜3b（実績収集）＋ step 5（採点）だけを実行し、日報本体は組まず Slack 投稿もしない（Notion ログへの追記のみ）
 
 ## 評価の参照先（非公開設定）
 
@@ -43,7 +43,8 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bas
 
 > **morning から呼ばれたとき（連携モード）**: `/morning` の手順 8 から起動された場合は、**今日のセッション調査（未完タスクの実態）と自分のオープン PR が既に渡される**。step 3 の PR 再取得はスキップして渡された一覧を使い、渡されたセッション調査を step 1 の「明日やること」と併せて宣言の材料にする（宣言に書いたつもりと "実際どこで止まっていたか" を突き合わせ、地に足のついた宣言にする）。単独で `/daily-report 朝` を叩いたときは従来どおり下記を自分で集める。
 
-1. 前日（直近）の `~/.claude/daily-report/*.md` の「明日やること」を読む（**morning 連携時は、渡された当日のセッション調査＝未完タスクの実態も併せて材料にする**）
+1. 直近の日報がある `~/.claude/daily-report/*.md` を読む（前日とは限らない。`## 日報` 見出しを持つ最新ファイル）。使うのは **「明日やること」「進行中」「振り返りの宣言外」の 3 箇所**。宣言外は「宣言に無いのに毎日発生している仕事」の実測なので、今日も起きる前提で材料にする（**morning 連携時は、渡された当日のセッション調査＝未完タスクの実態も併せて材料にする**）
+   - 併せて宣言ファイルを新しい順に遡り、同じタスクが何日連続で宣言に載っているかを数える（＝持ち越し日数。step 4 で使う）
 2. **前日の採点を読む（＝今日の目標を立てる軸。最重要）**。夜モードで Notion に付けた辛口採点を引き継ぎ、今日の目標に反映する:
    - 先に eval-config.json を読む（無ければこの step は ⚠️ でスキップ）。`notion-query-data-sources` で直近の採点行を取る（`{log_db}`。以下 SQL の `{log_db}` は設定値に置換）:
      ```sql
@@ -52,19 +53,27 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bas
      ```
    - 実データの最新 1 行を使う（`📝 記入例`＝実施日が空の行は除外）。読めない / 前日採点が無い時は ⚠️ で明示し、前日ファイルの「明日やること」だけを軸に進める（催促しない）
 3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`（**morning 連携時は再取得せず、渡されたオープン PR 一覧を使う**）
-4. ユーザーと 1-2 往復で確定し、当日ファイルに保存する:
+4. ドラフトを**提示と同時に当日ファイルへ `## 宣言（下書き）YYYY-MM-DD` として保存**し、ユーザーと 1-2 往復で確定したら見出しを `## 宣言 YYYY-MM-DD` に置き換える（確定前に会話が切れても材料が残る。下書きのままの日は夜モードが下書きと突き合わせる）:
 
 ```
 ## 宣言 YYYY-MM-DD
 
-- <タスク>: <今日どこまで進めるか（目標を測れる形で。例: 設計レビュー依頼まで / dev4 で動作確認して QA に出せる状態まで）>
-- ...
+1. <タスク>: <今日どこまで進めるか（目標を測れる形で。例: 設計レビュー依頼まで / dev4 で動作確認して QA に出せる状態まで）>（持ち越し N 日目）
+2. ...
+3. ...
+
+<今日確定している割り込み: リリース日・当番・会議など。事実だけ 1 行。無ければ書かない>
+<待ちのタスク: 「〇〇はレビュー待ち。動きがあれば対応する」の 1 行>
 ```
 
 目標は「やる」でなく **「どこまで行ったら達成か」** が分かる形で書く（夜の予定比の基準になる）。
 
+- **番号が優先順位**。1 から順に手を付ける前提で並べる（前日採点の「明日への一手」は 1 番に置く）
+- **達成ラインに時刻を付けない**（「〜11:30」のような区切り）。付けても当たらず、当たらない数字は突き合わせの基準にならない。夜は「達成 / 未達」と、番号どおりに着手できたかで測る
+- **持ち越し N 日目** は同じタスクが宣言に載った連続日数（初日は付けない）。**3 日目からは親タスク名のまま再宣言しない**: 今日 1 日で閉じる大きさに切り直す（✗「MySQL 8.4 手順の確定」→ ◎「見積もりを 1 つに決めて Notion 手順書に書く」）か、末尾の待ち行へ落とす。切り直せないなら何を待っているかを末尾行に書く
+
 **分量**: 宣言は **3 項目まで・1 項目 2 行以内**（1 行目にタスクと達成ライン、2 行目は理由が要るときだけ）。
-背景説明・経緯・言い訳は書かない。末尾の「レビュー待ち」行は 2 行以内にまとめる。
+背景説明・経緯・言い訳は書かない。末尾の行（割り込み・待ち）は合わせて 2 行以内にまとめる。
 
 **達成ラインは「自分の手で終わらせられること」に限る（必須）。** 他人の応答が挟まる状態をゴールに置かない。
 
@@ -96,7 +105,7 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bas
 夜モードとの違い: 収集は「当日 00:00〜現在」までの**軽量版**（採点系ソースを読まない・投稿しない・翌日への引き継ぎもしない）。狙いは日報の完成ではなく、**残りの半日をどう使うか**の判断材料を短く出すこと。
 
 1. 当日ファイルの宣言（タスクと達成ライン）を読む。無ければ「宣言なし」として進捗の事実だけ拾う。
-2. **これまでの実績を investigator に委譲して軽く収集する**（夜モードと同じ並列パターンの軽量版。範囲は「当日 00:00〜現在」）。**独立ソースは 1 メッセージでまとめて並列に投げ**、生ログではなく要約だけを返させる。0 件/エラーのソースは ⚠️ で明示して他は止めない。**採点系ソース（eval-config.json・採点基準ページ・career-feed memory・1on1）は読まない**（採点は夜モードだけ）:
+2. **これまでの実績を investigator に委譲して軽く収集する**（夜モードと同じ並列パターンの軽量版。範囲は「当日 00:00〜現在」＝夜 step 0 の `since` を当日日付に置き換える）。**独立ソースは 1 メッセージでまとめて並列に投げ**、生ログではなく要約だけを返させる。0 件/エラーのソースは ⚠️ で明示して他は止めない。**採点系ソース（eval-config.json・採点基準ページ・career-feed memory・1on1）は読まない**（採点は夜モードだけ）:
    - 当日のコミット（夜 step 1 の横断スクリプトをそのまま流用）
    - 自分の PR 活動（作成・更新・レビュー。夜 step 2 の縮小版: `gh search prs --author=@me` / `--reviewed-by=@me` を `updated:>=当日` で）
    - Claude セッション・memory ＋ 当日の Slack（詰まり・相談・割り込みの兆候。夜 3a/3b の軽量版。Bash/ローカル読みと Slack 検索は別 investigator に割って並列で）
@@ -120,55 +129,80 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bas
 
 ## 夜モード: 収集して振り返る
 
-**収集（調査）は全て investigator サブエージェントに委譲する。** step 1・2・3a・3b の 4 ソースを `Task`（`investigator`）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。**この 4 本は独立なので 1 メッセージでまとめて並列に投げる**（1 本ずつ順番に投げない＝これが夜の体感速度を決める）。返ってきた要約だけを step 4-5 の入力にする。investigator は read 専任・要約返却が既定なので、渡すのは「当日分だけ・PR/コミット/スレッドの URL 付き」という**範囲指定**でよい。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
+**収集（調査）は全て investigator サブエージェントに委譲する。** step 1・2・3a・3b の 4 ソースを（step 0 の収集範囲を各指示に含めて） `Task`（`investigator`）に投げ、**生ログではなく要約だけ**を返させる（main の文脈を汚さない）。**この 4 本は独立なので 1 メッセージでまとめて並列に投げる**（1 本ずつ順番に投げない＝これが夜の体感速度を決める）。返ってきた要約だけを step 4-5 の入力にする。investigator は read 専任・要約返却が既定なので、渡すのは「当日分だけ・PR/コミット/スレッドの URL 付き」という**範囲指定**でよい。あるソースが 0 件/エラーでも他は止めない（⚠️ 明示）。
 
 各サブエージェントに渡す調査内容:
 
-### 1. 当日のコミットを横断収集
+### 0. 収集範囲（step 1〜3 共通。investigator への指示に必ず含める）
+
+起点は **直近の夜日報の翌日 00:00**。当日 00:00 に固定しない（日報を書かなかった日の作業が、翌日の日報でも拾われずに消えるのを防ぐ）:
 
 ```bash
 today=$(date +%F)
+last=$(rg -l '^## 日報 ' ~/.claude/daily-report/ | sort | tail -1 | xargs basename -s .md)   # 直近の夜日報の日付
+since=$(date -j -f %F -v+1d "${last}" +%F 2>/dev/null || date -v-7d +%F)                   # その翌日から。日報が 1 本も無ければ 7 日前
+[[ "${since}" > "${today}" ]] && since="${today}"                                          # 同日 2 回目は当日だけ（[[ ]] は bash / zsh 共通）
+```
+
+`since` が当日より前なら、その日の分は日報に「（M/D 分）」を頭に付けて同じ枠に載せる（過去日の日報を遡って作らない）。
+
+### 1. コミットを横断収集
+
+```bash
+me_noreply=$(gh api user --jq '"\(.id)+\(.login)@users.noreply.github.com"' 2>/dev/null)   # GitHub 上の squash merge はこの author になる
+me_noreply="${me_noreply:-__none__}"   # gh が失敗して空になると --author="" が全員のコミットに一致するので、一致しない値で埋める
 for d in $(fd -H -t d '^\.git$' ~/src --max-depth 4 -x dirname {} | sort -u); do
-  log=$(git -C "${d}" log --all --since="${today} 00:00" --author="$(git -C "${d}" config user.email)" --oneline 2>/dev/null)
+  log=$(git -C "${d}" log --all --since="${since} 00:00" --author="$(git -C "${d}" config user.email)" --author="${me_noreply}" --format='%ad %h %s' --date=format:%m-%d 2>/dev/null)
   [ -n "${log}" ] && printf '## %s\n%s\n' "${d}" "${log}"
 done
 ```
-→ リポごとに「何をしたか」を 1-2 行へ要約して返す（ハッシュ羅列にしない）。
+→ リポごとに「何をしたか」を 1-2 行へ要約して返す（ハッシュ羅列にしない）。**dotfiles / light-skills などの個人整備リポも落とさない**（日報では「宣言外」に 1 行で束ねる）。worktree（`~/src/*/worktrees/`）のブランチは主クローンの `--all` に含まれるので別に走らせない。
 
-### 2. 当日の PR 活動を収集
+### 2. PR 活動を収集
 
 作成・更新・マージ・レビューの 4 観点。スコープはグローバル検索（light-inc / light-inc-sub / palmu 系を含む）:
 
 ```bash
-today=$(date +%F)
-# 自分の PR で今日動いたもの（作成・更新・マージ）
-gh search prs --author=@me --json url,title,repository,state,updatedAt --limit 30 -- "updated:>=${today}"
-# 今日レビューした他人の PR
-gh search prs --reviewed-by=@me --json url,title,repository,author --limit 30 -- "updated:>=${today}"
+# 自分の PR で期間内に動いたもの（作成・更新・マージ）
+gh search prs --author=@me --json url,title,repository,state,createdAt,updatedAt --limit 50 -- "updated:>=${since}"
+# 期間内にレビューした他人の PR
+gh search prs --reviewed-by=@me --json url,title,repository,author --limit 30 -- "updated:>=${since}"
 ```
 
 フラグがエラーになったら `gh search prs --help` で確認して読み替える（結果ゼロとエラーを混同しない）。
+→ **1 件も落とさず全件を返す**。同じテーマの PR は「テーマ・リポ・番号の列挙」でまとめてよいが番号は省略しない（落とす判断は step 4 で main がする）。
 
-### 3a. 当日の Claude セッション・memory を確認（ローカル読み取り）
+### 3a. Claude セッションの作業単位を復元（ローカル読み取り）
 
-git/PR に現れない作業（調査・設計・レビュー・運用対応）の足跡を、ローカルの履歴と memory から拾う。**読み口が Bash とローカル fd/jq なので、Slack 検索（3b）とは別 investigator に割って並列で投げる**（別ツールを別 Task で同時に走らせて速くする）:
+git/PR に現れない作業（調査・設計・Notion / LHS の更新・ダッシュボード・運用対応）の足跡を拾う。**一次ソースは trace ログ**（`~/.claude/logs/traces/YYYY-MM-DD.jsonl`。PostToolUse hook が全ツール呼び出しを記録している）。`history.jsonl` の末尾 N 件は 1 日の 1/4 しか覆わないので使わない。**読み口が Bash とローカル jq なので、Slack 検索（3b）とは別 investigator に割って並列で投げる**（別ツールを別 Task で同時に走らせて速くする）:
 
 ```bash
-# 当日触ったプロジェクトとプロンプト概要（スキーマは実物を head で確認してから jq を書く）
-head -1 ~/.claude/history.jsonl
-jq -r 'select(.timestamp != null)' ~/.claude/history.jsonl | tail -50   # 当日分に絞って集計
-# 今日更新された memory（進行中タスクの根拠になる）
-fd . ~/.claude/projects --glob '*.md' --changed-within 1d
+# (1) 期間内の trace を session × project で集計し、30 呼び出し以上を「作業単位」とみなす
+for f in ~/.claude/logs/traces/*.jsonl; do
+  d=$(basename "${f}" .jsonl); [[ "${d}" < "${since}" ]] && continue
+  jq -r 'select(.project != "") | [.session[0:8], .project, .tool] | @tsv' "${f}"
+done | awk -F'\t' '{k=$1"\t"$2; n[k]++} END{for(k in n) if(n[k]>=30) print n[k]"\t"k}' | sort -rn
+
+# (2) 作業単位ごとに「何をしたか」を復元する材料（<sid> は (1) の session 先頭 8 桁、<日付> はその trace ファイル）
+jq -r 'select(.session|startswith("<sid>")) | select(.tool=="Edit" or .tool=="Write") | .input.file_path' ~/.claude/logs/traces/<日付>.jsonl | sort | uniq -c | sort -rn | head
+jq -r 'select(.session|startswith("<sid>")) | select(.tool=="Agent" or .tool=="Skill" or (.tool|test("^mcp__(notion|plugin_slack)"))) | [.tool, (.input.description // .input.skill // "")] | @tsv' ~/.claude/logs/traces/<日付>.jsonl | sort | uniq -c | sort -rn | head
+
+# (3) 各セッションが何を頼まれ・どこで終わったか（since から今日までの日数 × 24 時間。当日だけなら 24）
+days=$(( ( $(date -j -f %F "${today}" +%s) - $(date -j -f %F "${since}" +%s) ) / 86400 + 1 ))
+~/.claude/skills/morning/session-status.py $(( days * 24 ))
+# (4) 期間内に更新された memory（進行中タスクの根拠になる）
+fd . ~/.claude/projects --glob '*.md' --changed-within "${days}d"
 ```
 
-→ investigator は Claude セッション・memory を横断し、成果につながる動き（何を調べ / 設計し / 直したか）だけを要約して返す。
+除外する作業単位: `project` が空（launchd）、日報 / morning / collect-feed 自身のセッション（Skill が `daily-report` / `collect-feed`、Write 先が `~/.claude/daily-report/`）。
+→ investigator は**作業単位ごとに 1 行**（project / 何をしたか / 閉じたか続いているか / 根拠にしたパスや呼び出し）で返す。0 件に丸めない。**PR やコミットが無い作業単位（Notion 更新・ダッシュボード・調査だけ）も落とさない**。
 
-### 3b. 当日の Slack を確認
+### 3b. Slack を確認
 
 git/PR に現れない **Slack での議論・相談・運用対応**を拾う。**これが可視化ギャップの本丸**。3a とは別 investigator で並列に投げる（Slack 検索は API 往復で遅くなりがちなので、ローカル読みと重ねて待ち時間を隠す）:
 
-- **Slack（調査・相談・運用対応の一次ソース。ユーザーは日報でこれを見ることに同意済み）**: 当日の自分の発言・スレッドを検索する
-  - `slack_search_public_and_private` で query = `from:<@自分の user_id> on:<当日 YYYY-MM-DD>`、`sort=timestamp`（自分の user_id はツール説明に `Current logged in user's user_id is …` として表示されるのでそれを使う。公開リポに ID を直書きしない）
+- **Slack（調査・相談・運用対応の一次ソース。ユーザーは日報でこれを見ることに同意済み）**: 期間内の自分の発言・スレッドを検索する
+  - `slack_search_public_and_private` で query = `from:<@自分の user_id> on:<当日 YYYY-MM-DD>`（範囲が複数日なら `after:<since の前日>`）、`sort=timestamp`（自分の user_id はツール説明に `Current logged in user's user_id is …` として表示されるのでそれを使う。公開リポに ID を直書きしない）
   - private チャンネル/DM でも調査・相談が起きるので public 限定にしない
   - 目ぼしいスレッドは `slack_read_thread` で深掘りし、「何を調べ / 決め / 対応したか」を要約（雑談は落とす）
 → investigator は当日の Slack を横断し、成果につながる議論・対応だけを URL 付きで要約して返す。
@@ -185,10 +219,10 @@ git/PR に現れない **Slack での議論・相談・運用対応**を拾う�
 
 ### 振り返り（宣言との突き合わせ）
 - <宣言タスクごとに: 達成 / 目標まで残り X / 未着手（理由）。予定比を一言（予定どおり / 半日遅れ・理由は X）>
-- <宣言に無かったが発生した作業（割り込み・運用対応）もここに。時間を食った要因の可視化>
+- 宣言外: <宣言に無かった発生作業。割り込み・運用対応・個人整備（dotfiles 等は 1 行に束ねる）。なければ「なし」>
 
 ### 進行中
-- <どこまで進んだか + 残り + 完了見込み>
+- <3a の作業単位のうち今日で閉じていないもの。PR が無くても載せる。どこまで進んだか + 残り + 完了見込み>
 
 ### ブロッカー / 相談
 - <待ち・詰まり。なければ「なし」>
@@ -198,15 +232,33 @@ git/PR に現れない **Slack での議論・相談・運用対応**を拾う�
 ```
 
 - 振り返りを空欄にしない（最低でも予定比 1 行）。宣言が無い日は成果ベースで振り返る
+- 進行中は PR の state だけで決めない。PR が無い作業単位（Notion / LHS / ダッシュボード / 調査）も 3a の結果から載せる
 - 秘匿情報（API キー・顧客データ・未公開の人事情報）は書かない
+
+**取りこぼしチェック（必須・日報本体をユーザーに提示する前に材料メモへ書く）**
+
+step 1〜3 で返ってきた **作業単位（3a）と、作成・マージされた PR（2）を全部**、日報本体を組み始める前に当日ファイルの材料メモへ左列として列挙する。右列（「載せた枠」か「落とした理由」）は本体を組みながら埋め、**提示時点で空欄を残さない**。右列に空欄がある間はドラフトを提示しない:
+
+```
+### 材料メモ（Slack には載せない）
+#### 取りこぼしチェック
+| 作業単位 / PR | 載せた枠（成果 / 宣言外 / 進行中 / 明日）または落とした理由 |
+|---|---|
+| palmu-devops: MySQL 8.4 手順の Notion 更新（trace 1096 呼び出し） | 進行中 |
+| dotfiles #75 / #76 | 宣言外に束ねた |
+| famly #12 | 落とした（個人リポの typo 修正） |
+```
+
+件数上限で落とした項目もここに残す（黙って消えない）。日報のどこにも無く、この表にも無い作業単位が後から見つかったら、それが取りこぼし。
 
 **分量（必須・投稿が長くなるのを止める）**
 
 - **「なぜそうなったか」は書かない。「何がどうなったか」だけ書く。** 原因・調査の過程・経緯は本文に入れない（聞かれてから答える）。日報が長くなる原因はほぼこれ
 - **時刻と時系列を書かない。**「13:20 から詰めて 14:15 にハドルで決めて 18:39 に依頼した」のような経過は全部落とし、着地だけ書く。
-  収集で拾った時刻は当日ファイルの材料メモに残してよいが、**Slack 投稿には出さない**（例外は宣言の達成ライン時刻「〜09:30」と、振り返りでそれと突き合わせる分だけ）
+  収集で拾った時刻は当日ファイルの材料メモに残してよいが、**Slack 投稿には出さない**（例外なし。宣言に時刻を置かないので突き合わせも要らない）
 - 1 項目 = 1 行。どうしても足りないときだけ 2 行目まで。**3 行以上書かない**
-- 件数の上限: 今日の成果 3〜5 / 進行中 3 / ブロッカー 3 / 明日やること 3。超えたら重要度で落とす（全部書かない）
+- 件数の上限: 今日の成果 3〜5 / 進行中 3 / ブロッカー 3 / 明日やること 3。超えたら重要度で落とし、落としたものは取りこぼしチェックに理由を残す
+- **同じテーマの PR は 1 行に束ねて番号を列挙する**（例: `secret-scan を 7 リポに入れた #12/#34/#56/…`）。上限は行数であって PR 数ではない
 - URL は 1 項目 1 本まで
 - 日報本体は全体で 30 行以内を目安にする。超えたら削る対象は説明であって項目ではない
 
@@ -261,5 +313,6 @@ step 1-4 で見えた当日の成果・振り返りを入力に、最終評価�
 
 - **投稿・記録は承認後のみ**。ドラフト（日報本体＋採点行）を提示 → ユーザーが確定 → Slack 投稿 & Notion 追記、の順を必ず守る
 - いずれかの収集ステップでエラーが出ても後続は止めない（部分的な材料でドラフトを作り、欠けたソースを ⚠️ で明示）
-- 当日 0 件のソースは「なし」として扱い、無理に埋めない
+- 期間内 0 件のソースは「なし」として扱い、無理に埋めない
+- 日報を書かなかった日があっても、その日の日報を遡って作らない（step 0 の範囲で次の日報が拾う）
 - `~/.claude/daily-report/` が無ければ作る。ファイルは日付単位で 1 本（宣言と日報を同居させる）
