@@ -23,6 +23,15 @@ log() {
 mkdir -p "${HOME}/.claude"
 log "=== morning-prep start ==="
 
+# --- 0. 追記専用ログのローテーション（上限超過分だけ 1 世代退避して空にする） ---
+# 自分のログを膨らませる前に回す。traces は対象外（日付で分かれており長期保存に価値がある）。
+ROTATE="$(dirname "$0")/rotate-logs.sh"
+if [ -f "${ROTATE}" ]; then
+    log "rotate-logs: $(bash "${ROTATE}" 2>&1 | tr '\n' ' ')"
+else
+    log "rotate-logs: SKIP (見つからない: ${ROTATE})"
+fi
+
 # --- 1. Claude Code 本体の更新（claude update は非対話） ---
 if command -v claude >/dev/null 2>&1; then
     if claude update >> "${LOG_FILE}" 2>&1; then
