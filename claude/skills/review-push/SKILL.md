@@ -58,6 +58,7 @@ touch .claude-review-gate
 
 ## 注意事項
 
+- **手順 5 で `bash-guard.sh` に止められることがある**（信頼 org 外への push は exit 2）。`~/.claude/hooks/gh-trusted-orgs.txt` に対象 owner が無いのが原因なので、レビューをやり直さず、ブロック文が出す 1 行（`echo '<owner>' >> ~/.claude/hooks/gh-trusted-orgs.txt`）をユーザーに提示して判断を仰ぐ。自分で追記しない・`bash-guard-ok` マーカーを勝手に作らない
 - ゲートが検査するのは **Claude Code が実行する git push だけ**。ユーザーが自分のターミナルから push する分には関与しない
 - 緊急バイパスは**ユーザーが明示的に承認した場合のみ** `CLAUDE_REVIEW_BYPASS=1 git push`。Claude の判断で勝手に使わない
 - ゲートなしのリポでもこのスキル自体は実行できる（記録は残るが push は自由）

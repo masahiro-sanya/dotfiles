@@ -166,6 +166,15 @@ for catalog in "$DOTFILES_DIR/claude/failure-catalog/"*.md; do
     [ -f "$catalog" ] && backup_and_link "$catalog" "$HOME/.claude/failure-catalog/$(basename "$catalog")"
 done
 
+# Claude Code scripts (CLAUDE.md や .zshrc から `~/.claude/scripts/...` として参照される補助スクリプト)
+# launchd の plist は $DOTFILES_DIR の絶対パスを直接叩くのでここに依存しないが、
+# 手で叩く trace-summary.sh は CLAUDE.md が ~/.claude/scripts/ を指しているため配る。
+echo "--- Claude Code Scripts ---"
+mkdir -p "$HOME/.claude/scripts"
+for script in "$DOTFILES_DIR/claude/scripts/"*.sh "$DOTFILES_DIR/claude/scripts/"*.py; do
+    [ -f "$script" ] && backup_and_link "$script" "$HOME/.claude/scripts/$(basename "$script")"
+done
+
 # --- Codex CLI (hooks: WezTerm タブに Codex の稼働状態を出す) ---
 # Codex は Claude と同じ wezterm-status.sh を WEZTERM_STATUS_AGENT=codex で呼ぶ。
 # 反映には Codex 側で `/hooks` から trust し直す必要がある（Codex はハッシュ trust）。

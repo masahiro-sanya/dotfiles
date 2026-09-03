@@ -1,7 +1,7 @@
 ---
 name: daily-report
 description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）を踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
-allowed-tools: Task, Bash(gh search prs *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
+allowed-tools: Task, Agent, Bash(gh search prs *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
 ---
 
 # 日報サイクル

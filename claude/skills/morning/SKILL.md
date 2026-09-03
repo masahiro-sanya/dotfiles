@@ -1,16 +1,16 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task, Agent
 ---
 
 # 朝一ルーチン
 
-毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること。
+毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること（TaskCreate が無いセッションでは、応答の中で「いま手順いくつ・残りどれ」を明示する）。
 
 > **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。ただし手順 5 は `~/.claude/.collect-feed-last` が今日なら朝前の launchd（collect-feed-prep）で収集済み＝バッチから外し、レポートを読むだけにする（手順 5 の事前実行チェック参照）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
-> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）と `TaskOutput`（block:false）の生存確認で裏取り**する（TaskList は TODO 一覧＝サブエージェントは載らないので裏取りに使えない）。生存が確認できないなら放置せず投げ直すか正直に報告する。起動後も完了まで見届け、無反応が続けば TaskOutput で生存を確認する（完了済みは「No task found」＋結果は完了通知で届く＝失敗ではない。空振りのまま「実行中」と述べない）。
+> **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）で裏取り**する。返り値が無いなら放置せず投げ直すか正直に報告する。起動後は完了通知が届くまで見届ける（空振りのまま「実行中」と述べない）。**`TaskOutput` で生存確認しない**: deprecated なうえ、local_agent の `.output` はサブエージェントの全 transcript への symlink で、読むと main の文脈が溢れる。TaskList も TODO 一覧＝サブエージェントは載らない。
 
 ## 手順
 
@@ -80,7 +80,7 @@ main は返ってきた整形済みリストをそのまま提示し、サマリ
 
 **feed-collector に委譲**する（config 読み・Notion クエリ・巡回ログで main の文脈を汚さないため）。**朝で最重量の手順なので、手順 3・4 と一緒に冒頭バッチで同時起動する**（survey と重ねて待ち時間を隠す）。feed-collector は `collect-feed:collect-feed` を最後まで回し（古い記事のアーカイブ・Notion 登録・🚨時の Slack 通知・light-inc 横断調査まで）、**Step 10 の収集レポートだけ**を返す。main はそのレポートを提示し、サマリに Notion 登録件数を出す。
 
-- **20〜30 分かかるのが正常・遅くても kill しない**: サブエージェント内では `Workflow` が使えず、約50ソースを単独直列で WebFetch＋途中で自動コンテキスト圧縮が数回走るため、この手順は元々20〜30分かかる。無反応に見えても、まず `TaskOutput`（block:false）等で **進捗を確認** し、能動的に tool を叩いていれば正常＝待つ。**前進しているジョブを止めない**（過去に前進中の feed を kill して 27 分の仕事を 65 分に伸ばした）。
+- **20〜30 分かかるのが正常・遅くても kill しない**: サブエージェント内では `Workflow` が使えず、約50ソースを単独直列で WebFetch＋途中で自動コンテキスト圧縮が数回走るため、この手順は元々20〜30分かかる。無反応に見えても**待つのが正解**（TaskOutput は使わない。上の「起動確認」参照）。**前進しているジョブを止めない**（過去に前進中の feed を kill して 27 分の仕事を 65 分に伸ばした）。
 - **最終サマリを feed で待たない（ブロックしない）**: 手順 8 の宣言は 手順 3・4 だけで組めて feed に依存しないので、**手順 1-4・6-8 が終わっても feed がまだ収集中なら、手順 5 を「収集中（縮退モード・完了後に別途報告）」としてサマリを先に出してよい**。feed-collector が完了したらそのレポートを追記する。feed 待ちで朝ルーチン全体を止めない。
 - **フォールバック**: feed-collector が収集を完了できない（単独直列の順次巡回にも失敗した）場合に限り、main が従来どおり Skill ツールで `collect-feed:collect-feed` を直接実行する（**main なら `Workflow` が使えて並列巡回が復活する＝速い**。他手順の委譲はそのまま）。
 
@@ -141,5 +141,5 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 
 - いずれかのステップでエラーが出ても **後続は止めない**（朝一は完走優先）
 - エラーがあったステップは最終サマリに `⚠️` を付けて明示
-- TaskCreate で全ステップを管理し、in_progress → completed を逐次更新
+- TaskCreate で全ステップを管理し、in_progress → completed を逐次更新（使えないセッションでは応答内で現在地を示す）
 - 手順 6 は提案と承認が本体。**承認なしで CLAUDE.md やスキルを書き換えない**

