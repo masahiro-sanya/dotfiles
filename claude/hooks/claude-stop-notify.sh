@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Claude Code Stop hook — ターン完了の音（herdr の外だけ）
 #
-# 通知の持ち主は herdr（~/.config/herdr/config.toml の [ui.toast] delivery = "system" と
-# [ui.sound]。背景ワークスペースだけ通知される）。herdr のペイン内では鳴らさない:
+# 通知の持ち主は herdr（~/.config/herdr/config.toml の [ui.sound]。背景ワークスペースだけ
+# 鳴る。[ui.toast] は delivery = "off" にしてあり、ポップアップは出さない）。
+# herdr のペイン内では鳴らさない:
 # hook は自分がフォアグラウンドかを知らないので、鳴らす役をここに残すと必ず二重になる。
 # 素の WezTerm で回すときは herdr が居ないので、この hook が完了音を担う。
 #
