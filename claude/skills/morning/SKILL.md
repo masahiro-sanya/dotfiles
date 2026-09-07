@@ -1,14 +1,14 @@
 ---
 name: morning
-description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認 → 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task, Agent
+description: 朝一ルーチン。Claude Code 更新 → light-skills 更新 → 全プロジェクトのセッション進捗確認（＋Notion 開発タスク一覧）→ 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task, Agent
 ---
 
 # 朝一ルーチン
 
 毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること（TaskCreate が無いセッションでは、応答の中で「いま手順いくつ・残りどれ」を明示する）。
 
-> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。ただし手順 5 は `~/.claude/.collect-feed-last` が今日なら朝前の launchd（collect-feed-prep）で収集済み＝バッチから外し、レポートを読むだけにする（手順 5 の事前実行チェック参照）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
+> **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）、手順 5 のフィード収集は **feed-collector**（書き込み可）に委譲する。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査＋Notion 開発タスク一覧）・手順 4（PR状況）・手順 5（feed-collector）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える＝最大 4 本）。ただし手順 5 は `~/.claude/.collect-feed-last` が今日なら朝前の launchd（collect-feed-prep）で収集済み＝バッチから外し、レポートを読むだけにする（手順 5 の事前実行チェック参照）。最重量の feed 収集を survey と重ねるのが狙い。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
 > **起動確認（必須）**: サブエージェントを投げたら（冒頭バッチは**投げた全本数について**）「収集中／実行中」と表示する前に、**起動時の返り値（agent ID）で裏取り**する。返り値が無いなら放置せず投げ直すか正直に報告する。起動後は完了通知が届くまで見届ける（空振りのまま「実行中」と述べない）。**`TaskOutput` で生存確認しない**: deprecated なうえ、local_agent の `.output` はサブエージェントの全 transcript への symlink で、読むと main の文脈が溢れる。TaskList も TODO 一覧＝サブエージェントは載らない。
 
@@ -30,7 +30,7 @@ claude --version    # 新バージョン確認
 
 Skill ツールで `light-skills-updater:update-plugins` を起動。結果はそのまま表示する。
 
-### 3. 全プロジェクトのセッション進捗確認
+### 3. 全プロジェクトのセッション進捗確認＋Notion 開発タスク一覧
 
 **investigator に委譲**する（72h 分の生ログで main の文脈を汚さないため）。手順 4・5（週初は 7 の収集も）と独立なので、冒頭バッチで 1 メッセージにまとめて同時に投げる。
 
@@ -39,7 +39,16 @@ investigator への指示: `~/.claude/skills/morning/session-status.py 72` を�
 - 明らかに **判断待ちで止まっているもの**（「許可待ち」「確認お願いします」等）
 - 「次に行うのは＞」「進め方これで良いかな」のような **未完了の問いかけが残っているもの**
 
-このステップは **「昨日までの未完タスクの棚卸し」** が目的。main は返ってきた要約を提示し、再開候補 2-3 個への短い観点付けをして、**ユーザーに「今日どれを再開する？」と聞く**（この判断・問いかけは main が持つ）。
+**併せて Notion「開発タスク一覧」の自分のタスクも同じ investigator に取らせる**（Claude セッションだけだと、**まだ着手していないチケット**と**期日が来ているチケット**が棚卸しから落ちる）。指示:
+
+- `~/.claude/daily-report/eval-config.json` を読み、`task_view_url`（開発タスク一覧の自分名義のビュー）を取る。キーが無ければこの分は ⚠️ でスキップ（セッション調査だけ返す）
+- `notion-query-data-sources` の **view モード**（`{"mode":"view","view_url":"<task_view_url>","page_size":50}`）で引く。担当者・ステータスの絞り込みはビュー側に入っているので、フィルタを足さない
+- 返すのは `完了予定日 / タスク名 / ステータス / リリース / URL` の **5 列だけ**・**完了予定日の昇順**（1 行に全プロパティが入るので生の結果は貼らせない）
+- **読むだけ。Notion 側は書き換えない**（ステータス更新は `dev-ticket` スキルの担当）
+
+返ってきた一覧は main が **遅延（完了予定日が今日以前）／今週内** に分けて数える（`ステータス=保留` と、リリースが実バージョン（`3.11.0` 等）でないバックログは数えない）。最終サマリ 3 行目の件数はこの数え方に揃える。
+
+このステップは **「昨日までの未完タスクの棚卸し」** が目的。main は返ってきた要約（セッション＋Notion タスク）を提示し、再開候補 2-3 個への短い観点付けをして、**ユーザーに「今日どれを再開する？」と聞く**（この判断・問いかけは main が持つ）。**この Notion タスク一覧はそのまま手順 8 へ渡す**（daily-report 側で再取得させない）。
 
 ### 4. 全リポジトリのPRレビュー状況
 
@@ -111,9 +120,10 @@ main は返ってきた要約に **講評・判定を付ける**（この判断�
 
 Skill ツールで `daily-report` を **朝モード**で起動し、次を伝えて材料を渡す:
 
-- 「morning から連携。**今日のセッション調査と自分のオープン PR は取得済みなので再取得は不要**」
+- 「morning から連携。**今日のセッション調査・自分のオープン PR・Notion 開発タスク一覧は取得済みなので再取得は不要**」
 - 手順 3 で investigator がまとめた **セッション調査の要約**（どのタスクがどこで止まっているか）
 - 手順 4 で取得した **自分のオープン PR 一覧**（`gh search prs --author=@me` 相当の分）
+- 手順 3 で取得した **Notion「開発タスク一覧」の自分のタスク**（完了予定日昇順の 5 列。daily-report 朝モード step 4 の材料）
 
 daily-report 側が前日ファイルの「明日やること」＋前日採点を読み合わせ、これらを材料に今日の宣言ドラフトを作る。以降はドラフト提示 → ユーザー承認 → **#daily-sanya 投稿**まで daily-report の標準フローに従う（morning はその結果を最終サマリに載せるだけ）。
 
@@ -129,7 +139,7 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 
 1. Claude Code: <旧> → <新>（または "更新なし"）
 2. light-skills: <N> 件更新
-3. セッション: <N> プロジェクトで進行中（要再開: <候補2-3個>）
+3. セッション: <N> プロジェクトで進行中（要再開: <候補2-3個>）／Notion タスク: 遅延 <N> 件・今週 <M> 件
 4. PR: レビュー待ち <N> 件 / 自分のPR <N> 件
 5. collect-feed: <N> 件 Notion 登録
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
