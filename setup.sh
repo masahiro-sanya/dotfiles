@@ -166,6 +166,13 @@ for catalog in "$DOTFILES_DIR/claude/failure-catalog/"*.md; do
     [ -f "$catalog" ] && backup_and_link "$catalog" "$HOME/.claude/failure-catalog/$(basename "$catalog")"
 done
 
+# Claude Code rules (~/.claude/rules/*.md は CLAUDE.md と同列に毎セッション読まれる。レビューの型など、CLAUDE.md から切り出した規約)
+echo "--- Claude Code Rules ---"
+mkdir -p "$HOME/.claude/rules"
+for rule in "$DOTFILES_DIR/claude/rules/"*.md; do
+    [ -f "$rule" ] && backup_and_link "$rule" "$HOME/.claude/rules/$(basename "$rule")"
+done
+
 # Claude Code scripts (CLAUDE.md や .zshrc から `~/.claude/scripts/...` として参照される補助スクリプト)
 # launchd の plist は $DOTFILES_DIR の絶対パスを直接叩くのでここに依存しないが、
 # 手で叩く trace-summary.sh は CLAUDE.md が ~/.claude/scripts/ を指しているため配る。
