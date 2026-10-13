@@ -70,21 +70,15 @@ notify_failure() {
     osascript -e "display notification \"$1\" with title \"collect-feed-prep 失敗\"" >/dev/null 2>&1 || true
 }
 
-# macOS には timeout(1) が無いので、バックグラウンド実行＋見張りプロセスで打ち切る。
+# 打ち切り処理（run_with_timeout）は morning-prep.sh と共通の lib-timeout.sh に置く。
 # 打ち切った場合は kill された分の終了コード（128+9）が返る。
-run_with_timeout() {
-    local seconds cmd_pid killer_pid rc
-    seconds="$1"
-    shift
-    "$@" &
-    cmd_pid=$!
-    ( sleep "${seconds}"; kill -9 "${cmd_pid}" 2>/dev/null ) >/dev/null 2>&1 &
-    killer_pid=$!
-    wait "${cmd_pid}"
-    rc=$?
-    # 見張りを止める（中の sleep は残りうるが、最大 ${seconds} 秒で自然に消える）
-    kill "${killer_pid}" 2>/dev/null
-    return ${rc}
+# ~/.claude/scripts/ の symlink 経由で起動されても dotfiles 側の実体の隣を見る
+# shellcheck source=lib-timeout.sh
+. "$(dirname "$(/usr/bin/perl -MCwd -e 'print Cwd::abs_path(shift)' "$0")")/lib-timeout.sh" || {
+    # 読めないまま進むと各ステップが rc=127 で別の失敗に見えるので、原因を書いて止める
+    log "lib-timeout.sh を読めない。中止"
+    notify_failure "lib-timeout.sh を読めず中止"
+    exit 1
 }
 
 # `claude mcp list` の出力から ${REQUIRED_MCP} の行を探して接続状態を判定する。

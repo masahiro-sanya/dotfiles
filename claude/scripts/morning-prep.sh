@@ -35,20 +35,16 @@ add_problem() {
     fi
 }
 
-# collect-feed-prep.sh と同じ実装。coreutils の timeout は macOS 標準に無いため自前で持つ。
+# 打ち切り処理（run_with_timeout）は collect-feed-prep.sh と共通の lib-timeout.sh に置く。
 # 打ち切ると kill -9 で終わるので rc は 137 になる
-run_with_timeout() {
-    local seconds cmd_pid killer_pid rc
-    seconds="$1"
-    shift
-    "$@" &
-    cmd_pid=$!
-    ( sleep "${seconds}"; kill -9 "${cmd_pid}" 2>/dev/null ) >/dev/null 2>&1 &
-    killer_pid=$!
-    wait "${cmd_pid}"
-    rc=$?
-    kill "${killer_pid}" 2>/dev/null
-    return ${rc}
+# ~/.claude/scripts/ の symlink 経由で起動されても dotfiles 側の実体の隣を見る
+SCRIPT_DIR="$(dirname "$(/usr/bin/perl -MCwd -e 'print Cwd::abs_path(shift)' "$0")")"
+# shellcheck source=lib-timeout.sh
+. "${SCRIPT_DIR}/lib-timeout.sh" || {
+    # 読めないまま進むと全ステップが rc=127 で「失敗」と誤って報告されるので、原因を書いて止める
+    log "lib-timeout.sh を読めない（${SCRIPT_DIR}）。中止"
+    osascript -e "display notification \"lib-timeout.sh を読めず中止\" with title \"morning-prep\"" >/dev/null 2>&1 || true
+    exit 1
 }
 
 # 失敗理由の表示。rc=137 は run_with_timeout の打ち切り（kill -9）なので失敗と分けて書く
@@ -73,7 +69,7 @@ log "=== morning-prep start ==="
 
 # --- 0. 追記専用ログのローテーション（上限超過分だけ 1 世代退避して空にする） ---
 # 自分のログを膨らませる前に回す。traces は対象外（日付で分かれており長期保存に価値がある）。
-ROTATE="$(dirname "$0")/rotate-logs.sh"
+ROTATE="${SCRIPT_DIR}/rotate-logs.sh"
 if [ -f "${ROTATE}" ]; then
     log "rotate-logs: $(bash "${ROTATE}" 2>&1 | tr '\n' ' ')"
 else
@@ -123,6 +119,14 @@ if [ -e "${LIGHT_SKILLS_DIR}/.git" ]; then
         if [ ${rc} -eq 0 ]; then
             log "light-skills pull: OK"
         else
+            # 打ち切り（kill -9）は git が index.lock を消す暇を与えない。残すと翌日以降の pull も
+            # "index.lock exists" で失敗し続けるので、自分で殺した分だけここで片付ける
+            if [ ${rc} -eq 137 ]; then
+                lock="$(git -C "${LIGHT_SKILLS_DIR}" rev-parse --absolute-git-dir 2>/dev/null)/index.lock"
+                if [ -f "${lock}" ]; then
+                    rm -f "${lock}" && log "light-skills pull: 打ち切りで残った index.lock を削除"
+                fi
+            fi
             log "light-skills pull: FAILED $(describe_rc ${rc}) (続行)"
             add_problem "light-skills pull $(describe_rc ${rc})"
         fi

@@ -204,7 +204,9 @@ fi
 # ⚠️ いずれもコマンド境界 (^/|/;/&、環境変数代入プレフィックス許容) にアンカーする。
 #    アンカー無しだと `grep 'npm install' README.md` のような引数内の文字列で誤検知する。
 
-# パッケージインストール系 (npm install / yarn add / pip install / npx -y 等)。
+# パッケージインストール系 (npm install / yarn add / pip install / npx -y / brew install・tap 等)。
+# brew は settings.local.json の ask にしか無く、auto モードでは素通りしていた（2026-10-13 実測）。
+# PATH 外から呼ぶ /opt/homebrew/bin/brew のようなパス付き実行も同じ扱い。
 # これが無いと Phase 3 の case exit で「📦 パッケージインストール ask」が dead code になる
 # （pnpm / bun もネットワークチェックの exit 0 で素通り）。
 # npx は「インストールを明示するフラグ付き」のみ対象 (v1.15.6): -y/--yes（確認なしで取得・
@@ -213,7 +215,7 @@ fi
 # パッケージを実際に取得しうる状況（sandbox-off / WebFetch 直後）は Phase 0.5 の egress
 # verb 側で ask し、sandbox 内の registry 取得は network.allowedDomains が遮る（間接ゲート）。
 HAS_PKG_INSTALL=0
-if printf '%s' "$SCAN_TARGETS" | grep -qiE '(^|[|;&])[[:space:]]*([[:alpha:]_][[:alnum:]_]*=[^[:space:]]*[[:space:]]+)*(npm\s+(install|i|ci|add)|npx\s+(-[^[:space:]]+\s+)*(-y|--yes|-p|--package)\b|yarn\s+(install|add|i)|pnpm\s+(install|add|i)|bun\s+(install|add|i)|pip3?\s+install)\b'; then
+if printf '%s' "$SCAN_TARGETS" | grep -qiE '(^|[|;&])[[:space:]]*([[:alpha:]_][[:alnum:]_]*=[^[:space:]]*[[:space:]]+)*(npm\s+(install|i|ci|add)|npx\s+(-[^[:space:]]+\s+)*(-y|--yes|-p|--package)\b|yarn\s+(install|add|i)|pnpm\s+(install|add|i)|bun\s+(install|add|i)|pip3?\s+install|([^[:space:]|;&]*/)?brew\s+(install|reinstall|upgrade|tap))\b'; then
   HAS_PKG_INSTALL=1
 fi
 

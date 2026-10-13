@@ -171,7 +171,7 @@ cmd_matches() {
 # 対人送信なら "分類<TAB>理由" を stdout に出して return 0、非該当は return 1。
 # $2 は再帰の深さ。`bash -c '…'` の中身を見に行くときだけ増える（外から渡さない）。
 classify_command() {
-    local _cmd _depth _inner _hit _cmd_head _wrap _path _cmd_pos _gh_opts _body
+    local _cmd _depth _inner _hit _cmd_head _wrap _path _cmd_pos _gh_opts _body _gog_flag _gog _gmail
     _depth="${2:-0}"
     _cmd="$(printf '%s\n' "$1" | strip_heredocs)"
     [ -z "${_cmd}" ] && return 1
@@ -275,9 +275,28 @@ classify_command() {
         return 0
     fi
 
-    # メール送信（gogcli の gmail send）
-    if cmd_matches "${_cmd_pos}(gog|gogcli(\.sh)?)([[:space:]]+[^[:space:]]+)*[[:space:]]+gmail[[:space:]]+(send|reply|forward)([[:space:]]|$)"; then
+    # メール送信（gogcli）。gmail には mail / email の別名、トップレベルに `gog send`
+    # （gmail send の別名）、下書きの送信（drafts send / post）がある。どれか 1 つでも
+    # 漏らすと settings の ask（auto モードでは素通り）しか残らないので、別名まで並べる。
+    # Google Workspace CLI（gws）の gmail 送信（API 直叩きの send と +send 等のヘルパー）も同じ扱い。
+    # gog とサブコマンドの間、サブコマンド同士の間にはフラグ（値つき可）しか挟まない形だけを見る。
+    # 任意のトークンを許すと `gog gmail search mail send` のような検索語や、
+    # `gog calendar list && echo mail send` のような別コマンドの引数まで止まる。
+    _gog_flag='([[:space:]]+-[^[:space:]|;&]+([[:space:]]+[^-[:space:]|;&][^[:space:]|;&]*)?)*[[:space:]]+'
+    _gog="${_cmd_pos}(gog|gogcli(\.sh)?)${_gog_flag}"
+    _gmail="${_gog}(gmail|mail|email)${_gog_flag}"
+    if cmd_matches "${_gog}send([[:space:]]|$)" \
+        || cmd_matches "${_gmail}(send|reply|reply-all|replyall|forward|fwd|autoreply)([[:space:]]|$)" \
+        || cmd_matches "${_gmail}(drafts|draft)${_gog_flag}(send|post)([[:space:]]|$)" \
+        || cmd_matches "${_cmd_pos}gws[[:space:]]+gmail([[:space:]]+[^[:space:]|;&]+)*[[:space:]]+\+?(send|reply|reply-all|forward)([[:space:]]|$)"; then
         printf 'mail-send\tメール送信です。宛先と本文をユーザーに確認してください。\n'
+        return 0
+    fi
+
+    # Google Chat への投稿（スペース・DM とも宛先が人）。gws は spaces messages create と +send
+    if cmd_matches "${_gog}chat${_gog_flag}(messages|dm)${_gog_flag}(send|create|post)([[:space:]]|$)" \
+        || cmd_matches "${_cmd_pos}gws[[:space:]]+chat([[:space:]]+[^[:space:]|;&]+)*[[:space:]]+(messages[[:space:]]+create|\+send)([[:space:]]|$)"; then
+        printf 'chat-send\tGoogle Chat への投稿です。宛先と本文をユーザーに確認してください。\n'
         return 0
     fi
 
