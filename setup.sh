@@ -194,15 +194,16 @@ backup_and_link "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
 echo "--- mise ---"
 backup_and_link "$DOTFILES_DIR/mise/config.toml" "$HOME/.config/mise/config.toml"
 
-# --- launchd (morning-prep / collect-feed-prep) ---
+# --- launchd (launchd/*.plist.template) ---
 # plist はマシンごとに異なる絶対パス（$HOME / dotfiles の置き場）を含むため symlink できない。
 # リポにはプレースホルダ入りのテンプレートだけを置き、ここで実パスを埋めて生成する。
 # 内容が変わったときだけ bootout → bootstrap で読み直させる。
 echo "--- launchd ---"
 mkdir -p "$HOME/Library/LaunchAgents"
 LAUNCHD_FAILED=0
-for LAUNCHD_LABEL in com.masahrosanya.morning-prep com.masahrosanya.collect-feed-prep; do
-    LAUNCHD_TEMPLATE="$DOTFILES_DIR/launchd/${LAUNCHD_LABEL}.plist.template"
+# 対象は launchd/ のテンプレート全部（ジョブを足したときにここを直し忘れないよう、ラベルを並べない）
+for LAUNCHD_TEMPLATE in "$DOTFILES_DIR"/launchd/*.plist.template; do
+    LAUNCHD_LABEL="$(basename "$LAUNCHD_TEMPLATE" .plist.template)"
     LAUNCHD_PLIST="$HOME/Library/LaunchAgents/${LAUNCHD_LABEL}.plist"
 
     if [ ! -f "$LAUNCHD_TEMPLATE" ]; then

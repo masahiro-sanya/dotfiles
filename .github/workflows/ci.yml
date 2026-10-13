@@ -17,6 +17,14 @@ jobs:
           jq . claude/keybindings.json > /dev/null
           jq . codex/hooks.json > /dev/null
 
+      - name: Validate launchd plist templates
+        # setup.sh が sed で埋めるプレースホルダは XML としては素の文字列なので、テンプレートのまま検査できる
+        run: |
+          for f in launchd/*.plist.template; do
+            python3 -c 'import plistlib,sys; plistlib.load(open(sys.argv[1],"rb"))' "$f"
+            echo "plist OK: $f"
+          done
+
       - name: Forbid runtime fields in settings.json
         # キー一覧は git/strip-claude-runtime.sh が唯一の定義元（--check に委ねる）
         run: |
@@ -50,7 +58,7 @@ jobs:
           done
 
       - name: shellcheck
-        run: shellcheck -S warning claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh git/*.sh git/tests/*.sh .githooks/pre-commit
+        run: shellcheck -S warning setup.sh claude/hooks/*.sh claude/hooks/tests/*.sh claude/scripts/*.sh claude/statusline.sh git/*.sh git/tests/*.sh .githooks/pre-commit
 
       - name: Hooks regression tests
         run: bash claude/hooks/tests/run-tests.sh

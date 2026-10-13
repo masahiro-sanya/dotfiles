@@ -9,16 +9,37 @@
 #     (3b) 上記いずれか該当 → ask。理由文に検出フラグを添えて判断を速くする（判断補助）
 # 長い base64/hex の網羅検査は git SHA / 検索クエリ / 署名付き URL を誤検知するため、
 # allow を絞る側(=誤検知は ask に倒れ安全側)にのみ使い、ask を増やす側には使わない。
+#
+# 注意: この環境は permissions.defaultMode "auto" で、hook の "ask" は確認プロンプトを出さずに
+# 素通りする（CLAUDE.md の実測）。確実に止めたい (1) だけは exit 2 で止める。
+# (3b) の ask は誤検知の多い判断補助なので、素通りを承知でそのまま残している。
 set -uo pipefail
+
+HOOKS_ERROR_LOG="${HOOKS_ERROR_LOG:-${HOME}/.claude/hooks-error.log}"
+log_fail() {
+  echo "$(date '+%Y-%m-%dT%H:%M:%S%z') webfetch-guard.sh: $1" >> "${HOOKS_ERROR_LOG}" 2>/dev/null || true
+}
+GUARD_HITS_LOG="${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
+log_block() {
+  printf '%s\t%s\t%s\t%s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" 'webfetch-guard' "$1" "$(printf '%s' "$2" | tr '\t\n' '  ' | cut -c1-80)" \
+    >> "${GUARD_HITS_LOG}" 2>/dev/null || true
+}
+
 INPUT=$(cat 2>/dev/null || true)
 [ -z "$INPUT" ] && exit 0
-URL=$(printf '%s' "$INPUT" | jq -r '.tool_input.url // empty' 2>/dev/null || true)
+if ! URL=$(printf '%s' "$INPUT" | jq -r '.tool_input.url // empty' 2>/dev/null); then
+  log_fail "jq parse failed (bytes=$(printf '%s' "$INPUT" | wc -c | tr -d ' '))"
+  exit 0
+fi
 [ -z "${URL:-}" ] && exit 0
 
-# (1) 既知の秘密パターン（query/path/host のどこに出ても）
-if printf '%s' "$URL" | grep -qE 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|sk-(ant-)?[A-Za-z0-9_-]{20,}|-----BEGIN|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}'; then
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"🔑 WebFetch ガード: URL に秘密情報らしきパターン(APIキー/トークン/JWT/秘密鍵)を検出。context 内の機密を外部へ送ろうとしていないか確認してください。\"}}"
-  exit 0
+# (1) 既知の秘密パターン（query/path/host のどこに出ても）→ exit 2 で止める
+# 記録には scheme://host だけを残す（userinfo に載ったトークンや path/query の秘密をログに写さない）
+if printf '%s' "$URL" | grep -qE 'AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35}|(^|[^A-Za-z0-9])sk-(ant-)?[A-Za-z0-9_-]{20,}|-----BEGIN|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}'; then
+  LOGGED_HOST=$(printf '%s' "$URL" | sed -nE 's#^([a-zA-Z][a-zA-Z0-9+.-]*://)([^/?#@]*@)?([^/?#@]+).*#\1\3#p')
+  log_block "webfetch-secret-blocked" "${LOGGED_HOST:-(host 解析不能)}"
+  echo "WebFetch ガード: URL に秘密情報らしきパターン(APIキー/トークン/JWT/秘密鍵)を検出したため止めた。context 内の機密を外部へ送ろうとしていないか確認し、必要ならユーザーに URL を提示して判断を仰ぐこと。" >&2
+  exit 2
 fi
 
 # authority([user@]host[:port]) / scheme / 実 host を抽出（userinfo を剥がす = "@偽装"対策）
@@ -26,7 +47,8 @@ AUTHORITY=$(printf '%s' "$URL" | sed -nE 's#^[a-zA-Z][a-zA-Z0-9+.-]*://([^/?#]+)
 SCHEME=$(printf '%s' "$URL" | sed -nE 's#^([a-zA-Z][a-zA-Z0-9+.-]*)://.*#\1#p' | tr '[:upper:]' '[:lower:]')
 HOST=$(printf '%s' "$AUTHORITY" | sed -E 's#^[^@]*@##; s#:[0-9]+$##' | tr '[:upper:]' '[:lower:]')
 
-ALLOWFILE="${HOME}/.claude/hooks/webfetch-allowed-domains.txt"
+# テスト用に WEBFETCH_ALLOWED_DOMAINS で差し替え可
+ALLOWFILE="${WEBFETCH_ALLOWED_DOMAINS:-${HOME}/.claude/hooks/webfetch-allowed-domains.txt}"
 matched=0
 if [ -n "$HOST" ] && [ -f "$ALLOWFILE" ]; then
   while IFS= read -r dom; do

@@ -1,6 +1,8 @@
 #!/bin/bash
 # dotfiles pre-commit: staged ファイルのみを対象にした軽量チェック
 # - claude/settings.json: JSON 妥当性 + ランタイムフィールド（コミット禁止）の検出
+# - codex/hooks.json / claude/keybindings.json: JSON 妥当性
+# - launchd/*.plist.template: plist として読めるか
 # - 全 staged ファイル: 高確度の秘密パターン検知（AWSキー・GitHub PAT・秘密鍵 等）
 # - *.sh: bash -n（staged 内容で検証）
 # - claude/hooks/*.sh が staged のときだけ hooks 回帰テストを実行
@@ -51,6 +53,16 @@ while IFS= read -r f; do
                     err "    git config filter.strip-claude-runtime.smudge cat"
                     err "  登録後に git add し直すと、実ファイルは無傷のまま index からだけ除去されます"
                 fi
+            fi
+            ;;
+        codex/hooks.json|claude/keybindings.json)
+            if ! git show ":${f}" | jq . >/dev/null 2>&1; then
+                err "${f} が JSON としてパースできません"
+            fi
+            ;;
+        launchd/*.plist.template)
+            if ! git show ":${f}" | python3 -c 'import plistlib,sys; plistlib.load(sys.stdin.buffer)' >/dev/null 2>&1; then
+                err "${f} が plist として読めません"
             fi
             ;;
     esac

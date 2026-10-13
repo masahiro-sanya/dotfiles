@@ -2,8 +2,21 @@
 # credential-guard.sh — Read ツールが認証情報ファイルを読もうとしたら確認を求める
 set -euo pipefail
 
+# 注意: この環境は permissions.defaultMode "auto" で、下の "ask" は確認プロンプトを出さずに
+# 素通りする（CLAUDE.md の実測）。実効的な歯止めは settings.local.json の Read deny 側。
+# ここを exit 2 にしないのは、basename の credential/secret 一致が secret_manager.go のような
+# ソースにも当たり、止めると通常の作業が詰まるため。
+
+HOOKS_ERROR_LOG="${HOOKS_ERROR_LOG:-${HOME}/.claude/hooks-error.log}"
+log_fail() {
+  echo "$(date '+%Y-%m-%dT%H:%M:%S%z') credential-guard.sh: $1" >> "${HOOKS_ERROR_LOG}" 2>/dev/null || true
+}
+
 INPUT=$(cat)
-FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null)
+if ! FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty' 2>/dev/null); then
+  log_fail "jq parse failed (bytes=$(printf '%s' "$INPUT" | wc -c | tr -d ' '))"
+  exit 0
+fi
 
 if [ -z "$FILE_PATH" ]; then
   exit 0

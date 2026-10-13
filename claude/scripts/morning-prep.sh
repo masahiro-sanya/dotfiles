@@ -4,6 +4,8 @@
 #
 # 設計方針:
 # - 各ステップは独立。失敗してもログに残して次へ進む（朝一は完走優先）
+# - 外部に繋ぐステップは打ち切り時間を持つ（marketplace update が light-skills で 20 分超止まった実例あり）
+# - 失敗・打ち切り・pull 停止は最後に 1 回だけ通知する（ログだけだと誰も気づかない）
 # - ログは ~/.claude/morning-prep.log に追記
 # - 完了したら ~/.claude/.morning-prep-last に日付を書き、/morning 側が skip 判定に使う
 # - macOS 標準 bash 3.2 互換で書く
@@ -20,6 +22,52 @@ log() {
     printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "${LOG_FILE}"
 }
 
+# 打ち切り時間（秒）
+STEP_TIMEOUT=600
+
+# 通知に載せる問題の一覧（改行区切りでなく "; " 区切りで 1 行にまとめる）
+PROBLEMS=""
+add_problem() {
+    if [ -z "${PROBLEMS}" ]; then
+        PROBLEMS="$1"
+    else
+        PROBLEMS="${PROBLEMS}; $1"
+    fi
+}
+
+# collect-feed-prep.sh と同じ実装。coreutils の timeout は macOS 標準に無いため自前で持つ。
+# 打ち切ると kill -9 で終わるので rc は 137 になる
+run_with_timeout() {
+    local seconds cmd_pid killer_pid rc
+    seconds="$1"
+    shift
+    "$@" &
+    cmd_pid=$!
+    ( sleep "${seconds}"; kill -9 "${cmd_pid}" 2>/dev/null ) >/dev/null 2>&1 &
+    killer_pid=$!
+    wait "${cmd_pid}"
+    rc=$?
+    kill "${killer_pid}" 2>/dev/null
+    return ${rc}
+}
+
+# 失敗理由の表示。rc=137 は run_with_timeout の打ち切り（kill -9）なので失敗と分けて書く
+describe_rc() {
+    if [ "$1" -eq 137 ]; then
+        printf '%s' "打ち切り(${STEP_TIMEOUT}秒)"
+    else
+        printf '%s' "失敗(rc=$1)"
+    fi
+}
+
+# 手順 1・2（/morning が skip 判定に使う部分）が 1 つでも失敗したら 1
+PREP_FAILED=0
+
+# LaunchAgent はユーザーの GUI セッションで走るので osascript が届く
+notify_problems() {
+    osascript -e "display notification \"$1\" with title \"morning-prep\"" >/dev/null 2>&1 || true
+}
+
 mkdir -p "${HOME}/.claude"
 log "=== morning-prep start ==="
 
@@ -34,10 +82,14 @@ fi
 
 # --- 1. Claude Code 本体の更新（claude update は非対話） ---
 if command -v claude >/dev/null 2>&1; then
-    if claude update >> "${LOG_FILE}" 2>&1; then
+    run_with_timeout "${STEP_TIMEOUT}" claude update >> "${LOG_FILE}" 2>&1
+    rc=$?
+    if [ ${rc} -eq 0 ]; then
         log "claude update: OK ($(claude --version 2>/dev/null || echo unknown))"
     else
-        log "claude update: FAILED (続行)"
+        log "claude update: FAILED $(describe_rc ${rc}) (続行)"
+        add_problem "claude update $(describe_rc ${rc})"
+        PREP_FAILED=1
     fi
 else
     log "claude update: SKIP (claude が見つからない)"
@@ -45,10 +97,14 @@ fi
 
 # --- 2. プラグイン marketplace の更新（名前省略で全 marketplace） ---
 if command -v claude >/dev/null 2>&1; then
-    if claude plugin marketplace update >> "${LOG_FILE}" 2>&1; then
+    run_with_timeout "${STEP_TIMEOUT}" claude plugin marketplace update >> "${LOG_FILE}" 2>&1
+    rc=$?
+    if [ ${rc} -eq 0 ]; then
         log "plugin marketplace update: OK"
     else
-        log "plugin marketplace update: FAILED (続行)"
+        log "plugin marketplace update: FAILED $(describe_rc ${rc}) (続行)"
+        add_problem "marketplace update $(describe_rc ${rc})"
+        PREP_FAILED=1
     fi
 else
     log "plugin marketplace update: SKIP (claude が見つからない)"
@@ -59,15 +115,31 @@ LIGHT_SKILLS_DIR="${HOME}/src/palmu/light-skills"
 if [ -e "${LIGHT_SKILLS_DIR}/.git" ]; then
     if [ -n "$(git -C "${LIGHT_SKILLS_DIR}" status --porcelain 2>/dev/null)" ]; then
         log "light-skills pull: SKIP (working tree が dirty)"
-    elif git -C "${LIGHT_SKILLS_DIR}" pull --ff-only >> "${LOG_FILE}" 2>&1; then
-        log "light-skills pull: OK"
+        add_problem "light-skills が未コミット変更ありで pull 停止中"
     else
-        log "light-skills pull: FAILED (続行)"
+        # 認証プロンプトで止まらないよう GIT_TERMINAL_PROMPT=0、ネットワーク待ちは打ち切り時間で切る
+        GIT_TERMINAL_PROMPT=0 run_with_timeout "${STEP_TIMEOUT}" git -C "${LIGHT_SKILLS_DIR}" pull --ff-only >> "${LOG_FILE}" 2>&1
+        rc=$?
+        if [ ${rc} -eq 0 ]; then
+            log "light-skills pull: OK"
+        else
+            log "light-skills pull: FAILED $(describe_rc ${rc}) (続行)"
+            add_problem "light-skills pull $(describe_rc ${rc})"
+        fi
     fi
 else
     log "light-skills pull: SKIP (git リポではない: ${LIGHT_SKILLS_DIR})"
 fi
 
 # --- 完了スタンプ（/morning が今日実行済みかの判定に使う） ---
-date +%Y-%m-%d > "${STAMP_FILE}"
+# 手順 1・2 が失敗・打ち切りのときは書かない（書くと /morning が当日の再実行を skip してしまう）
+if [ "${PREP_FAILED}" -eq 0 ]; then
+    date +%Y-%m-%d >| "${STAMP_FILE}"
+else
+    log "stamp: SKIP (手順 1・2 が失敗したので /morning 側で再実行させる)"
+fi
+if [ -n "${PROBLEMS}" ]; then
+    log "problems: ${PROBLEMS}"
+    notify_problems "${PROBLEMS}（詳細は ~/.claude/morning-prep.log）"
+fi
 log "=== morning-prep done ==="

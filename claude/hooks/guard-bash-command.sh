@@ -105,14 +105,20 @@ fi
 #     ＝ fd に等価形が無い、または意味が変わるもの
 #   - find / や find ~ の全体探索
 #     ＝ コードベース検索ではなく、fd は隠しファイル・ignore の既定が違って等価にならない
+#   - -o / -or（条件の OR）＝ fd に等価形が無い
+#   - 探索の起点が隠しディレクトリ配下（~/.claude/plugins 等）
+#     ＝ fd は既定で隠しファイルを見ないので、素直に置き換えると結果が変わる
+#     （2026-09-15〜22 に `find ~/.claude/plugins -iname ...` と `-iname A -o -iname B` で 20 回超の連続ブロック）
 # 残る「特定ディレクトリ配下の -name/-iname 検索」だけが fd の素直な置き換え対象。
-find_skip='([^|;&]*(-exec|-mtime|-newer|-size|-delete|-prune|-depth([[:space:]]|$)))'
+find_skip='([^|;&]*(-exec|-mtime|-newer|-size|-delete|-prune|-depth([[:space:]]|$)|[[:space:]]-o(r)?([[:space:]]|$)))'
 find_root='[[:space:]]+(/|~|\$HOME)([[:space:]]|$)'
+find_hidden='[[:space:]]+[^[:space:]]*/\.[A-Za-z0-9_]'
 if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find([[:space:]]|$)" \
     && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find[[:space:]]${find_skip}" \
-    && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find${find_root}"; then
+    && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find${find_root}" \
+    && ! printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}find${find_hidden}"; then
     log_block "find-blocked" "${cmd}"
-    echo "ディレクトリ配下のファイル検索に find は使わない（CLAUDE.md）。fd で書き直す: find <dir> -name/-iname 'X' → fd 'X' <dir>（小文字パターンは既定で大文字小文字無視）。gitignore/隠しファイルも含めるなら fd -H -I 'X' <dir>。拡張子検索は fd -e go。-exec/-mtime 等と / 直下の全体探索はブロックしていない" >&2
+    echo "ディレクトリ配下のファイル検索に find は使わない（CLAUDE.md）。fd で書き直す: find <dir> -name/-iname 'X' → fd 'X' <dir>（小文字パターンは既定で大文字小文字無視）。gitignore/隠しファイルも含めるなら fd -H -I 'X' <dir>。拡張子検索は fd -e go。-exec/-mtime/-o 等、/ 直下の全体探索、隠しディレクトリ起点はブロックしていない" >&2
     exit 2
 fi
 
