@@ -974,6 +974,114 @@ else
 fi
 
 echo ""
+echo "== close-mcp-browser.sh =="
+
+# ps の出力をフィクスチャで差し替え、kill を shim にして「誰に送ったか」をファイルで観測する。
+# プロセス木（pid ppid command）:
+#   300 claude（このセッション）← 400 /bin/sh ← 500 hook 自身
+#     310 npm exec → 320 chrome-devtools-mcp → 330 Chrome 本体 → 331 Chrome Helper
+#   600 claude（別セッション）→ 610 npm exec → 620 chrome-devtools-mcp → 630 Chrome 本体 → 631 Helper
+#   700 普段使いの Chrome 本体 → 701 Helper（chrome-profile を含まない）
+#   800 このセッションのシェル（起動行に chrome-profile の文字列を含むが Chrome ではない）
+#       実機で Bash ツールのシェル自身を閉じた実例があるため固定する
+#   900 このセッションのシェル → 910 入れ子の claude -p → 920 npm exec → 930 MCP → 940 Chrome 本体
+#       自分の子孫だが別セッションの Chrome なので閉じない
+CMB_DIR="${TMP_ROOT}/close-mcp-browser"
+mkdir -p "${CMB_DIR}/bin"
+CMB_CALLS="${CMB_DIR}/kill-calls"
+CMB_PS="${CMB_DIR}/ps.txt"
+CMB_CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CMB_HELPER="/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
+CMB_PROFILE="--user-data-dir=${HOME}/.cache/chrome-devtools-mcp/chrome-profile"
+cat > "${CMB_PS}" <<CMB_PS_EOF
+    1     0 /sbin/launchd
+  300     1 claude
+  400   300 /bin/sh -c bash ~/.claude/hooks/close-mcp-browser.sh
+  500   400 bash ${HOOKS_DIR}/close-mcp-browser.sh
+  310   300 npm exec chrome-devtools-mcp@1.8.0
+  320   310 chrome-devtools-mcp
+  330   320 ${CMB_CHROME} --remote-debugging-pipe ${CMB_PROFILE} about:blank
+  331   330 ${CMB_HELPER} --type=renderer ${CMB_PROFILE}
+  600     1 claude
+  610   600 npm exec chrome-devtools-mcp@1.8.0
+  620   610 chrome-devtools-mcp
+  630   620 ${CMB_CHROME} --remote-debugging-pipe ${CMB_PROFILE} about:blank
+  631   630 ${CMB_HELPER} --type=renderer ${CMB_PROFILE}
+  700     1 ${CMB_CHROME}
+  701   700 ${CMB_HELPER} --type=renderer
+  800   300 /bin/zsh -c pgrep -f chrome-devtools-mcp/chrome-profile
+  810   300 /bin/zsh -c ls node_modules/chrome-devtools-mcp/ ; pgrep -f chrome-devtools-mcp/chrome-profile
+  811   810 pgrep -f chrome-devtools-mcp/chrome-profile
+  900   300 /bin/zsh -c claude -p hello
+  910   900 claude -p hello
+  920   910 npm exec chrome-devtools-mcp@1.8.0
+  930   920 chrome-devtools-mcp
+  940   930 ${CMB_CHROME} --remote-debugging-pipe ${CMB_PROFILE} about:blank
+CMB_PS_EOF
+cat > "${CMB_DIR}/bin/kill-shim" <<CMB_SHIM
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "${CMB_CALLS}"
+exit 0
+CMB_SHIM
+chmod +x "${CMB_DIR}/bin/kill-shim"
+
+# cmb_run <ps フィクスチャ> <起点 PID> -> stdout を CMB_OUT に、exit code を cmb_ec に
+cmb_run() {
+    command rm -f "${CMB_CALLS}"
+    CMB_OUT="$(
+        printf '{"hook_event_name":"Stop","stop_hook_active":false}' \
+            | CLOSE_MCP_BROWSER_PS_FILE="$1" CLOSE_MCP_BROWSER_SELF_PID="$2" \
+              CLOSE_MCP_BROWSER_KILL="${CMB_DIR}/bin/kill-shim" \
+              bash "${HOOKS_DIR}/close-mcp-browser.sh" 2>/dev/null
+    )"
+    cmb_ec=$?
+}
+
+# 自分のセッションの Chrome 本体だけに SIGTERM（Helper・別セッション・普段使いには送らない）
+cmb_run "${CMB_PS}" 500
+if [ "${cmb_ec}" -eq 0 ] && [ "$(cat "${CMB_CALLS}" 2>/dev/null)" = "-TERM 330" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 自分のセッションの MCP Chrome 本体だけを閉じる"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 送り先が違う（exit=${cmb_ec}, calls=$(tr '\n' ' ' 2>/dev/null < "${CMB_CALLS}")）"
+fi
+
+# stdout には何も出さない（Stop hook の stdout は Claude が拾う）
+if [ -z "${CMB_OUT}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: stdout に何も書かない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: stdout に出力（${CMB_OUT}）"
+fi
+
+# 祖先に claude が居ない（起点が木に無い）ときは何も閉じない
+cmb_run "${CMB_PS}" 999
+if [ "${cmb_ec}" -eq 0 ] && [ ! -s "${CMB_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: claude の祖先が見つからなければ何もしない(exit 0)"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: claude 不明時に送った（exit=${cmb_ec}, calls=$(tr '\n' ' ' 2>/dev/null < "${CMB_CALLS}")）"
+fi
+
+# 自分のセッションに MCP の Chrome が無ければ何もしない（別セッションの分を巻き込まない）
+CMB_PS_NONE="${CMB_DIR}/ps-none.txt"
+/usr/bin/grep -v -E '^ +3[123][01] ' "${CMB_PS}" > "${CMB_PS_NONE}"
+cmb_run "${CMB_PS_NONE}" 500
+if [ "${cmb_ec}" -eq 0 ] && [ ! -s "${CMB_CALLS}" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 自分の MCP Chrome が無ければ別セッションの分に触らない"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 別セッションの Chrome に送った（calls=$(tr '\n' ' ' 2>/dev/null < "${CMB_CALLS}")）"
+fi
+
+# ps が取れない（空）ときは fail-open（exit 0・何もしない・痕跡を残す）
+CMB_PS_EMPTY="${CMB_DIR}/ps-empty.txt"
+: > "${CMB_PS_EMPTY}"
+command rm -f "${HOOKS_ERROR_LOG}"
+cmb_run "${CMB_PS_EMPTY}" 500
+if [ "${cmb_ec}" -eq 0 ] && [ ! -s "${CMB_CALLS}" ] && /usr/bin/grep -q 'close-mcp-browser.sh' "${HOOKS_ERROR_LOG}" 2>/dev/null; then
+    PASS=$((PASS + 1)); echo "  ok: ps が空なら何もせず exit 0、hooks-error.log に痕跡"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: ps 空のとき（exit=${cmb_ec}, log=$([ -s "${HOOKS_ERROR_LOG}" ] && echo あり || echo なし)）"
+fi
+
+echo ""
 echo "== codex-pane-title.sh =="
 
 CPT_DIR="${TMP_ROOT}/codex-pane-title"
