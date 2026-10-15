@@ -189,6 +189,11 @@
           },
           {
             "type": "command",
+            "command": "bash ~/.claude/hooks/close-mcp-browser.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "bash ~/.claude/hooks/wezterm-status.sh",
             "timeout": 5
           }
