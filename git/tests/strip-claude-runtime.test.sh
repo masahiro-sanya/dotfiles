@@ -20,18 +20,31 @@ INPUT_FULL='{
   "theme": "dark",
   "model": "claude-opus-4-8",
   "effortLevel": "high",
+  "modelSettings": {"claude-opus-5-5": {"effortLevel": "high"}},
   "tui": "fullscreen",
   "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
+  "skipDangerousModePermissionPrompt": true,
+  "autoMode": {"allow": []},
   "skipAutoPermissionPrompt": true
 }'
 
 echo "== strip-claude-runtime.sh =="
 
-# 1. ランタイムフィールドが除去される
+# 1. ランタイムフィールドが除去される。
+#    キー一覧はテスト側に複製せず --list（定義元）から引く。
+#    定義元にキーを足したのに INPUT_FULL へ足し忘れた場合も検知する。
 out="$(printf '%s' "${INPUT_FULL}" | bash "${FILTER}")"
-if printf '%s' "${out}" | jq -e 'has("model") or has("effortLevel") or has("tui") or has("skipWorkflowUsageWarning") or has("agentPushNotifEnabled")' >/dev/null; then
-    fail "ランタイムフィールドが除去される（まだ残っている）"
+missing_fixture=""
+remaining=""
+for key in $(bash "${FILTER}" --list); do
+    printf '%s' "${INPUT_FULL}" | jq -e --arg k "${key}" 'has($k)' >/dev/null || missing_fixture="${missing_fixture} ${key}"
+    printf '%s' "${out}" | jq -e --arg k "${key}" 'has($k)' >/dev/null && remaining="${remaining} ${key}"
+done
+if [ -n "${missing_fixture}" ]; then
+    fail "INPUT_FULL に定義元のキーが無い:${missing_fixture}"
+elif [ -n "${remaining}" ]; then
+    fail "ランタイムフィールドが除去される（まだ残っている:${remaining}）"
 else
     pass "ランタイムフィールドが除去される"
 fi
@@ -86,6 +99,7 @@ fi
 check_out="$(printf '%s' "${INPUT_FULL}" | bash "${FILTER}" --check)"
 if printf '%s\n' "${check_out}" | grep -qx 'model' \
    && printf '%s\n' "${check_out}" | grep -qx 'effortLevel' \
+   && printf '%s\n' "${check_out}" | grep -qx 'modelSettings' \
    && ! printf '%s\n' "${check_out}" | grep -qx 'theme'; then
     pass "--check は該当キーだけを報告する"
 else
