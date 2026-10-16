@@ -148,7 +148,7 @@ if [ -f "${REPOS_FILE}" ]; then
         repo_line="$(printf '%s' "${repo_line}" | sed 's/#.*//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
         [ -z "${repo_line}" ] && continue
         case "${repo_line}" in
-            "~"|"~/"*) repo_line="${HOME}${repo_line#\~}" ;;
+            \~|\~/*) repo_line="${HOME}${repo_line#\~}" ;;
         esac
         pull_repo "${repo_line}"
     done < "${REPOS_FILE}"
