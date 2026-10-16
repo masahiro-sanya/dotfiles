@@ -108,7 +108,7 @@ cat <<'EOF'
   2. gcloud auth login && gcloud auth application-default login
   3. ~/.claude/settings.local.json を旧マシンからコピー（plugin/permission の機械固有設定）
   4. Claude Code 起動後、/plugin で marketplace プラグインを導入
-     （Slack / palmu-api-doc / Google Drive など）
+     （Slack / Google Drive / 業務用プラグインなど）
   5. notion MCP は初回接続時にブラウザで OAuth 認証
 
 新シェルを開く: exec zsh -l

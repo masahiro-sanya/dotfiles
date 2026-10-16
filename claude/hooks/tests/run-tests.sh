@@ -172,7 +172,7 @@ assert 0 guard-bash-command.sh "引用符内の | と find は許可" "$(bash_js
 # 素通りする。専用の除外条件は置かない（置くとガード全体の迂回路になるため。下の回帰参照）
 assert 0 guard-bash-command.sh "adb shell 内の grep は許可（クォート内）" "$(bash_json "adb shell \"dumpsys activity | grep -E top\"")"
 assert 0 guard-bash-command.sh "docker compose exec の grep は許可（コマンド位置でない）" "$(bash_json "docker compose exec -T app grep -rl Trtc tests/")"
-assert 0 guard-bash-command.sh "docker exec 内の find は許可（コマンド位置でない）" "$(bash_json "docker exec palmu-api find /var/www -name '*.php'")"
+assert 0 guard-bash-command.sh "docker exec 内の find は許可（コマンド位置でない）" "$(bash_json "docker exec example-api find /var/www -name '*.php'")"
 assert 0 guard-bash-command.sh "kubectl exec 内の grep は許可（コマンド位置でない）" "$(bash_json "kubectl exec pod -- grep foo /etc/hosts")"
 
 # 回帰: リモートシェル語彙を含む行でも、区切りの後のローカル grep/find はブロックし続ける
@@ -237,7 +237,7 @@ assert 0 guard-bash-command.sh "監査ログへの追記（>>）は許可" "$(ba
 assert 0 guard-bash-command.sh "監査ログのバックアップ cp は許可" "$(bash_json "cp ~/.claude/guard-hits.log /tmp/backup.log")"
 assert 0 guard-bash-command.sh "別セグメントの rm と監査ログ読みの複合は許可" "$(bash_json "command rm -f /tmp/x && cat ~/.claude/guard-hits.log")"
 
-# --dangerously-skip-permissions（Light ガイドライン）
+# --dangerously-skip-permissions（社内の AI 利用ガイドライン）
 assert 2 guard-bash-command.sh "dangerously-skip-permissions はブロック" "$(bash_json "claude --dangerously-skip-permissions -p task")"
 assert 0 guard-bash-command.sh "引用符内の dangerously-skip 言及は許可" "$(bash_json "echo 'never use --dangerously-skip-permissions'")"
 
@@ -1172,22 +1172,24 @@ echo "== bash-guard.sh =="
 BG_DIR="${TMP_ROOT}/bash-guard"
 mkdir -p "${BG_DIR}"
 printf '%s\n' '^echo[[:space:]]+hello-allowlisted' > "${BG_DIR}/allowlist.txt"
-printf '%s\n' 'light-inc' > "${BG_DIR}/trusted-orgs.txt"
+printf '%s\n' 'example-org' > "${BG_DIR}/trusted-orgs.txt"
 export BASH_GUARD_ALLOWLIST="${BG_DIR}/allowlist.txt"
 export BASH_GUARD_TRUSTED_ORGS="${BG_DIR}/trusted-orgs.txt"
+# 本物の ~/.claude/private/gh-trusted-orgs.txt を読ませない（存在しないパスに向ける）
+export BASH_GUARD_PRIVATE_TRUSTED_ORGS="${BG_DIR}/no-such-private-trusted-orgs.txt"
 export BASH_GUARD_OK_MARKER="${BG_DIR}/bash-guard-ok"
 
 BG_TRUSTED_REPO="${TMP_ROOT}/bg-trusted"
 BG_UNTRUSTED_REPO="${TMP_ROOT}/bg-untrusted"
 make_repo "${BG_TRUSTED_REPO}" main
 make_repo "${BG_UNTRUSTED_REPO}" main
-git -C "${BG_TRUSTED_REPO}" remote add origin git@github.com:light-inc/x.git
+git -C "${BG_TRUSTED_REPO}" remote add origin git@github.com:example-org/x.git
 git -C "${BG_UNTRUSTED_REPO}" remote add origin https://github.com/attacker/x.git
 
 # --- 通す側 ---
 assert 0 bash-guard.sh "safe command は許可" "$(bash_json "ls -la")"
 assert 0 bash-guard.sh "allowlist にマッチしたら許可" "$(bash_json "echo hello-allowlisted")"
-assert 0 bash-guard.sh "信頼 org への gh は許可" "$(bash_json "gh pr create --repo light-inc/palmu-api --title x")"
+assert 0 bash-guard.sh "信頼 org への gh は許可" "$(bash_json "gh pr create --repo example-org/example-api --title x")"
 assert 0 bash-guard.sh "信頼 org への git push は許可" "$(bash_json "git push origin main")" "${BG_TRUSTED_REPO}"
 
 # --- 止める側（auto モードでは ask が素通りするため exit 2 でなければ意味がない）---
@@ -1218,7 +1220,7 @@ assert 2 bash-guard.sh "サブシェルの中の git push もブロック" "$(ba
 assert 0 bash-guard.sh "commit と連鎖した信頼 org への push は許可" "$(bash_json "git add -A && git commit -m x && git push origin main")" "${BG_TRUSTED_REPO}"
 assert 0 bash-guard.sh "remote 省略の連鎖 push も許可" "$(bash_json "git commit -m x && git push")" "${BG_TRUSTED_REPO}"
 assert 2 bash-guard.sh "連鎖でも非信頼 org への push はブロック" "$(bash_json "git add -A && git push origin main")" "${BG_UNTRUSTED_REPO}"
-assert 0 bash-guard.sh "連鎖した remote add も URL の owner で判定する" "$(bash_json "git init -q && git remote add origin git@github.com:light-inc/y.git")" "${BG_TRUSTED_REPO}"
+assert 0 bash-guard.sh "連鎖した remote add も URL の owner で判定する" "$(bash_json "git init -q && git remote add origin git@github.com:example-org/y.git")" "${BG_TRUSTED_REPO}"
 
 # --- /tmp ヒューリスティックの絞り込み ---
 assert 2 bash-guard.sh "/tmp 経由の curl はブロック" "$(bash_json "curl -o /tmp/out.json https://example.com")"
@@ -1248,12 +1250,14 @@ check_logged "パッケージインストールのブロックを記録する" "
 check_logged "非信頼 org への push のブロックを記録する" "git-untrusted-org-blocked" "bash-guard.sh" "$(bash_json "git push origin main")" "${BG_UNTRUSTED_REPO}"
 check_not_logged "許可時は記録しない" "bash-guard.sh" "$(bash_json "ls -la")"
 
-unset BASH_GUARD_ALLOWLIST BASH_GUARD_TRUSTED_ORGS BASH_GUARD_OK_MARKER
+unset BASH_GUARD_ALLOWLIST BASH_GUARD_TRUSTED_ORGS BASH_GUARD_PRIVATE_TRUSTED_ORGS BASH_GUARD_OK_MARKER
 
 
 echo "--- credential-guard / webfetch-guard ---"
 # 許可ドメインは本物（~/.claude 側）でなくリポの同じファイルを見せる（CI には ~/.claude が無い）
 export WEBFETCH_ALLOWED_DOMAINS="${HOOKS_DIR}/webfetch-allowed-domains.txt"
+# 本物の ~/.claude/private/webfetch-allowed-domains.txt を読ませない（存在しないパスに向ける）
+export WEBFETCH_PRIVATE_ALLOWED_DOMAINS="${TMP_ROOT}/no-such-private-domains.txt"
 read_json() { printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$1"; }
 fetch_json() { printf '{"tool_name":"WebFetch","session_id":"t","tool_input":{"url":"%s","prompt":"x"}}' "$1"; }
 assert_out '"ask"' credential-guard.sh ".env の読み取りは ask" "$(read_json /x/app/.env.local)"

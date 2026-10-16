@@ -258,9 +258,9 @@ fi
 
 # gh api の endpoint (positional arg) を flag/値を除外しつつ抽出する。
 # 攻撃シナリオ:
-#   1. `gh api -f body=repos/light-inc/x repos/attacker/repo/issues -X POST`
+#   1. `gh api -f body=repos/trusted-org/x repos/attacker/repo/issues -X POST`
 #      → flag 値 (-f body=...) を endpoint と誤認させる
-#   2. `gh api -H 'Authorization: repos/light-inc/foo' repos/attacker/baz -X POST`
+#   2. `gh api -H 'Authorization: repos/trusted-org/foo' repos/attacker/baz -X POST`
 #      → quote 内に信頼 org の文字列を仕込んで誤誘導する
 # どちらも python3 shlex で正確に word splitting + quote 解釈してから flag を skip すれば
 # 安全に endpoint を取り出せる。bash の word splitting では quote 解釈ができないので python3 を使う。
@@ -293,6 +293,17 @@ for t in tokens:
         print(t)
         sys.exit(0)
 PYEOF
+}
+
+# 信頼 org 一覧の読み出し。リポの gh-trusted-orgs.txt に加えて、会社固有の org を置く
+# ~/.claude/private/gh-trusted-orgs.txt（git 管理外・無ければ無視）も続けて読む。
+# テストでは BASH_GUARD_PRIVATE_TRUSTED_ORGS を存在しないパスに向けて本物を読まない。
+PRIVATE_TRUSTED_ORGS_FILE="${BASH_GUARD_PRIVATE_TRUSTED_ORGS:-${HOME}/.claude/private/gh-trusted-orgs.txt}"
+trusted_orgs_stream() {
+  cat "$1" 2>/dev/null
+  echo
+  # 末尾改行の無いファイルでも最終行を read で落とさないよう、各ファイルの後に改行を足す
+  if [ -f "$PRIVATE_TRUSTED_ORGS_FILE" ]; then cat "$PRIVATE_TRUSTED_ORGS_FILE" 2>/dev/null; echo; fi
 }
 
 # HAS_GH_GIST=1 のときは Phase 1.5 の信頼 org allow を適用しない（gist は org に紐付かず、
@@ -338,7 +349,7 @@ if [ "$PRIMARY_CMD" = "gh" ] && [ "$HAS_GH_GIST" -eq 0 ]; then
           echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"✅ gh: 信頼 org にマッチ (${TARGET_ORG})\"}}"
           exit 0
         fi
-      done < "$TRUSTED_ORGS_FILE"
+      done < <(trusted_orgs_stream "$TRUSTED_ORGS_FILE")
     fi
   fi
 fi
@@ -346,7 +357,7 @@ fi
 # --- Phase 1.6: git push / remote add・set-url の信頼 org ゲート ---
 # gh の Phase 1.5 と同じ「信頼 org なら allow / それ以外は ask」の思想を、git の
 # 外向き操作 (push / remote add / remote set-url) にも適用する。これにより
-# `Bash(git push:*)` を一律 ask にせず、信頼 org (gh-trusted-orgs.txt: light-inc 等)
+# `Bash(git push:*)` を一律 ask にせず、信頼 org (gh-trusted-orgs.txt に載せた org 等)
 # への push は無確認のまま、見知らぬ remote / 攻撃者 URL への push (exfil 経路) だけ
 # 確認に回せる。push の対象 remote を「URL 直指定なら URL から」「remote 名なら
 # git -C <repo> remote get-url で」解決して owner を判定する。cd ラッパー時は cd 先を
@@ -526,7 +537,7 @@ GITEOF
         _oc=$(echo "$_org" | sed 's/#.*//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
         [ -z "$_oc" ] && continue
         if [ "$GIT_OWNER_LC" = "$_oc" ]; then GIT_TRUSTED=1; break; fi
-      done < "$GIT_TRUSTED_FILE"
+      done < <(trusted_orgs_stream "$GIT_TRUSTED_FILE")
     fi
     if [ "$GIT_TRUSTED" -eq 1 ]; then
       echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"✅ git: 信頼 org への ${GIT_OP} (${GIT_OWNER})\"}}"

@@ -68,7 +68,7 @@ fi
 # wezterm でタブ名にリポ名を出すには pane の cwd が要るので、自前で補う。
 # cw は `cd <repo> && claude` なので、claude 起動直前の cd(chpwd) で repo が通知される。
 # stdout が端末でないときは出さない。`zsh -ilc '<cmd>'` の出力を読む外部ツール
-# （LightDeskHub は `command -v claude` の結果を絶対パス扱いする）に対して、
+# （一部の GUI アプリは `command -v claude` の結果を絶対パス扱いする）に対して、
 # エスケープシーケンスが同じ行の先頭に混入してパースを壊すため。
 if [[ -n "$WEZTERM_PANE" && -t 1 ]]; then
   autoload -Uz add-zsh-hook
@@ -79,15 +79,20 @@ if [[ -n "$WEZTERM_PANE" && -t 1 ]]; then
 fi
 
 # --- Claude Code: 個別リポ cwd 起動 ---
-# ~/src・~/src/palmu（親ディレクトリ）で claude を起動すると memory や
+# ~/src（親ディレクトリ）で claude を起動すると memory や
 # プロジェクト設定が親側に分散するため、個別リポでの起動を習慣化する。
+# マシン固有の親ディレクトリ（~/src/<group> など）は ~/.zshrc.local（git 管理外）で
+# CW_EXTRA_BASES=("$HOME/src/<group>") のように配列で渡す。
+typeset -a CW_EXTRA_BASES
+CW_EXTRA_BASES=()
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
-# cw 用: ~/src/*/ と ~/src/palmu/*/ の git リポ一覧（フルパス）
+# cw 用: ~/src/*/ と CW_EXTRA_BASES 配下の git リポ一覧（フルパス）
 _cw_repos() {
   local base dir
   local -a found
   found=()
-  for base in "$HOME/src" "$HOME/src/palmu"; do
+  for base in "$HOME/src" "${CW_EXTRA_BASES[@]}"; do
     [[ -d "$base" ]] || continue
     for dir in "$base"/*/; do
       [[ -e "${dir}.git" ]] && found+=("${dir%/}")
@@ -103,7 +108,7 @@ cw() {
   local -a repos matches
   repos=(${(f)"$(_cw_repos)"})
   if (( ${#repos[@]} == 0 )); then
-    echo "cw: git リポが見つかりません (~/src, ~/src/palmu)" >&2
+    echo "cw: git リポが見つかりません (~/src と CW_EXTRA_BASES)" >&2
     return 1
   fi
   if [[ -n "$1" ]]; then
@@ -137,16 +142,21 @@ _cw() {
 }
 command -v compdef >/dev/null 2>&1 && compdef _cw cw
 
-# claude ラッパー: 親ディレクトリ（~/src / ~/src/palmu そのもの）での起動に警告
+# claude ラッパー: 親ディレクトリ（~/src / CW_EXTRA_BASES そのもの）での起動に警告
 # 端末から使うときだけ定義する。関数があると `command -v claude` がパスではなく
 # 関数名 "claude" を返すため、対話シェル経由でパス解決する外部ツール
-# （LightDeskHub は `zsh -ilc 'command -v claude'` の結果を絶対パス扱いする）が壊れる。
+# （GUI アプリの中には `zsh -ilc 'command -v claude'` の結果を絶対パス扱いする）が壊れる。
 # そもそも中で確認プロンプトを読むので、端末が無い呼び出しでは無効で構わない。
 if [[ -t 0 && -t 1 ]]; then
   claude() {
-    local ans
-    case "$PWD" in
-      "$HOME/src"|"$HOME/src/palmu")
+    local ans base
+    local is_parent=0
+    [[ "$PWD" == "$HOME/src" ]] && is_parent=1
+    for base in "${CW_EXTRA_BASES[@]}"; do
+      [[ "$PWD" == "$base" ]] && is_parent=1
+    done
+    case "$is_parent" in
+      1)
         echo "claude: $PWD は親ディレクトリです。memory/設定が分散するため個別リポでの起動を推奨します（cw <リポ名> が使えます）。" >&2
         printf 'このまま起動しますか？ [y/N] ' >&2
         read -r ans

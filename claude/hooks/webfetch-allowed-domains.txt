@@ -39,14 +39,3 @@ qiita.com
 note.com
 speakerdeck.com
 connpass.com
-
-# --- light-inc 業務でよく参照（各自調整）---
-basemachina.com
-intercom.com
-line.biz
-herp.cloud
-sensortower.com
-tiktok.com
-tencentcloud.com
-trtc.io
-flatt.tech

@@ -15,6 +15,4 @@
 # 個人 GitHub アカウントや他の org を信頼したい場合は、このファイルに1行追記する
 # （例: エンジニアが個人リポへの gh 操作を確認なしにしたいケース）。
 
-light-inc
-light-inc-sub
 masahiro-sanya

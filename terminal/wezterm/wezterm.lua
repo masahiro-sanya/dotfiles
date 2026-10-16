@@ -18,7 +18,7 @@ config.window_decorations = "RESIZE"
 config.show_tabs_in_tab_bar = true
 -- タブが一つの時は非表示
 config.hide_tab_bar_if_only_one_tab = true
--- 既定の 16 だとリポ名が数文字しか残らない（palmu-* は頭が揃うため全滅する）
+-- 既定の 16 だとリポ名が数文字しか残らない（同じ接頭辞のリポが並ぶと頭が揃うため全滅する）
 config.tab_max_width = 24
 -- falseにするとタブバーの透過が効かなくなる
 -- config.use_fancy_tab_bar = false

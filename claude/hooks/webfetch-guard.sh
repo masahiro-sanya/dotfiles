@@ -49,14 +49,24 @@ HOST=$(printf '%s' "$AUTHORITY" | sed -E 's#^[^@]*@##; s#:[0-9]+$##' | tr '[:upp
 
 # テスト用に WEBFETCH_ALLOWED_DOMAINS で差し替え可
 ALLOWFILE="${WEBFETCH_ALLOWED_DOMAINS:-${HOME}/.claude/hooks/webfetch-allowed-domains.txt}"
+# 会社固有のドメインは ~/.claude/private/webfetch-allowed-domains.txt（git 管理外・無ければ無視）にも置ける。
+# テストでは WEBFETCH_PRIVATE_ALLOWED_DOMAINS を存在しないパスに向けて本物を読まない
+PRIVATE_ALLOWFILE="${WEBFETCH_PRIVATE_ALLOWED_DOMAINS:-${HOME}/.claude/private/webfetch-allowed-domains.txt}"
+allow_stream() {
+  [ -f "$ALLOWFILE" ] && cat "$ALLOWFILE" 2>/dev/null
+  echo
+  # 末尾改行の無いファイルでも最終行を read で落とさないよう、後に改行を足す
+  [ -f "$PRIVATE_ALLOWFILE" ] && cat "$PRIVATE_ALLOWFILE" 2>/dev/null && echo
+  return 0
+}
 matched=0
-if [ -n "$HOST" ] && [ -f "$ALLOWFILE" ]; then
+if [ -n "$HOST" ]; then
   while IFS= read -r dom; do
     dom=$(printf '%s' "$dom" | sed 's/#.*//' | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
     [ -z "$dom" ] && continue
     if [ "$HOST" = "$dom" ]; then matched=1; break; fi
     case "$HOST" in *."$dom") matched=1; break;; esac
-  done < "$ALLOWFILE"
+  done < <(allow_stream)
 fi
 
 # (2) 許可ドメイン → allow

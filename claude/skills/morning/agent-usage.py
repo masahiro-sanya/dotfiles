@@ -14,12 +14,24 @@ from pathlib import Path
 
 ROOT = Path.home() / ".claude" / "projects"
 
-# 自作エージェント（このリポの claude/agents/ で定義したもの）
-CUSTOM = {
-    "investigator", "gcp-log-investigator", "palmu-api-researcher",
-    "verify-runner", "pr-review-triage",
-    "impl-runner", "review-runner", "feed-collector",
-}
+# 自作エージェント: ~/.claude/agents/・このリポの claude/agents/・~/.claude/private/agents/
+# にある *.md のファイル名（拡張子なし）。エージェント名を固定リストにしない
+def load_custom():
+    dirs = [
+        Path.home() / ".claude" / "agents",
+        Path(__file__).resolve().parents[2] / "agents",
+        Path.home() / ".claude" / "private" / "agents",
+    ]
+    names = set()
+    for d in dirs:
+        try:
+            names.update(p.stem for p in d.glob("*.md"))
+        except OSError:
+            continue
+    return names
+
+
+CUSTOM = load_custom()
 # Claude Code 組み込み
 BUILTIN = {
     "general-purpose", "Explore", "fork", "Plan", "claude",

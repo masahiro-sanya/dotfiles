@@ -9,6 +9,13 @@ FILTER="$(cd "$(dirname "$0")/.." && pwd)/strip-claude-runtime.sh"
 TMP_ROOT="$(mktemp -d)"
 trap 'command rm -rf "${TMP_ROOT}"' EXIT
 
+# 本物の ~/.claude/private/strip-marketplaces.txt を読ませない（存在しないパスに向ける）
+export STRIP_MARKETPLACES_FILE="${TMP_ROOT}/no-such-strip-marketplaces.txt"
+
+# 本物の ~/.claude/private/settings-plugins.json / hooks-error.log を読ませない・書かない
+export STRIP_PLUGINS_SNAPSHOT="${TMP_ROOT}/no-such-dir/settings-plugins.json"
+export HOOKS_ERROR_LOG="${TMP_ROOT}/hooks-error.log"
+
 PASS=0
 FAIL=0
 
@@ -134,6 +141,78 @@ for consumer in "${REPO_ROOT}/.githooks/pre-commit" "${REPO_ROOT}/.github/workfl
     fi
 done
 [ "${drift}" -eq 0 ] && pass "pre-commit / ci.yml はキー一覧を持たず --check に委ねている"
+
+# 11. strip-marketplaces.txt にある marketplace は extraKnownMarketplaces / enabledPlugins から除かれる
+MK_FILE="${TMP_ROOT}/strip-marketplaces.txt"
+printf '%s\n' '# 注釈' 'secret-mk  # 末尾コメント' > "${MK_FILE}"
+INPUT_MK='{
+  "theme": "dark",
+  "enabledPlugins": {"a@secret-mk": true, "b@public-mk": true, "secret-mk-updater@public-mk": true},
+  "extraKnownMarketplaces": {"secret-mk": {"source": {}}, "public-mk": {"source": {}}}
+}'
+out_mk="$(printf '%s' "${INPUT_MK}" | STRIP_MARKETPLACES_FILE="${MK_FILE}" bash "${FILTER}")"
+if printf '%s' "${out_mk}" | jq -e '(.enabledPlugins | keys) == ["b@public-mk","secret-mk-updater@public-mk"] and (.extraKnownMarketplaces | keys) == ["public-mk"] and .theme == "dark"' >/dev/null; then
+    pass "strip-marketplaces.txt の marketplace が除去され、他は残る"
+else
+    fail "marketplace の除去結果が不正（${out_mk}）"
+fi
+
+# 12. ファイルが無ければ従来どおり（何も除かない）。--check も同じ基準で報告する
+out_nomk="$(printf '%s' "${INPUT_MK}" | bash "${FILTER}")"
+check_mk="$(printf '%s' "${INPUT_MK}" | STRIP_MARKETPLACES_FILE="${MK_FILE}" bash "${FILTER}" --check)"
+check_nomk="$(printf '%s' "${INPUT_MK}" | bash "${FILTER}" --check)"
+if printf '%s' "${out_nomk}" | jq -e '(.enabledPlugins | length) == 3 and (.extraKnownMarketplaces | length) == 2' >/dev/null \
+   && [ -z "${check_nomk}" ] \
+   && printf '%s\n' "${check_mk}" | grep -qx 'extraKnownMarketplaces.secret-mk' \
+   && printf '%s\n' "${check_mk}" | grep -qx 'enabledPlugins.a@secret-mk' \
+   && ! printf '%s\n' "${check_mk}" | grep -q 'public-mk'; then
+    pass "ファイル無しは no-op、--check は同じ基準で報告する"
+else
+    fail "marketplace の no-op / --check が不正（${check_nomk} / ${check_mk}）"
+fi
+
+# 13. clean がスナップショットを書き、smudge が戻し、clean(smudge(x)) == clean(x)、
+#     スナップショット無しの smudge は素通し
+SNAP="${TMP_ROOT}/snap-dir/settings-plugins.json"
+out_c="$(printf '%s' "${INPUT_MK}" | STRIP_MARKETPLACES_FILE="${MK_FILE}" STRIP_PLUGINS_SNAPSHOT="${SNAP}" bash "${FILTER}")"
+if [ -f "${SNAP}" ] && jq -e '(.extraKnownMarketplaces | keys) == ["secret-mk"] and (.enabledPlugins | keys) == ["a@secret-mk"]' "${SNAP}" >/dev/null; then
+    pass "clean が除去エントリをスナップショットへ保存する"
+else
+    fail "clean のスナップショットが不正"
+fi
+
+snap_before="$(<"${SNAP}")"
+printf '%s' "${INPUT_MK}" | STRIP_MARKETPLACES_FILE="${MK_FILE}" STRIP_PLUGINS_SNAPSHOT="${SNAP}" bash "${FILTER}" >/dev/null
+printf '%s' '{"theme":"dark"}' | STRIP_MARKETPLACES_FILE="${MK_FILE}" STRIP_PLUGINS_SNAPSHOT="${SNAP}" bash "${FILTER}" >/dev/null
+if [ "$(<"${SNAP}")" = "${snap_before}" ]; then
+    pass "除去対象 0 件ではスナップショットを消さない・書き換えない"
+else
+    fail "除去対象 0 件でスナップショットが変わった"
+fi
+
+out_s="$(printf '%s\n' "${out_c}" | STRIP_PLUGINS_SNAPSHOT="${SNAP}" bash "${FILTER}" --smudge)"
+if printf '%s' "${out_s}" | jq -e '.enabledPlugins["a@secret-mk"] == true and (.extraKnownMarketplaces | has("secret-mk")) and (.extraKnownMarketplaces | has("public-mk")) and .theme == "dark"' >/dev/null; then
+    pass "smudge がスナップショットを足し戻す"
+else
+    fail "smudge の結果が不正（${out_s}）"
+fi
+
+out_rt="$(printf '%s\n' "${out_s}" | STRIP_MARKETPLACES_FILE="${MK_FILE}" STRIP_PLUGINS_SNAPSHOT="${SNAP}" bash "${FILTER}")"
+if [ "${out_rt}" = "${out_c}" ]; then
+    pass "clean(smudge(x)) == clean(x)"
+else
+    fail "clean(smudge(x)) が clean(x) と異なる"
+fi
+
+in_raw="$(printf '%s\n' "${out_c}")"
+out_ns="$(printf '%s\n' "${in_raw}" | STRIP_PLUGINS_SNAPSHOT="${TMP_ROOT}/none.json" bash "${FILTER}" --smudge)"
+printf '{ broken' > "${TMP_ROOT}/broken-snap.json"
+out_bs="$(printf '%s\n' "${in_raw}" | STRIP_PLUGINS_SNAPSHOT="${TMP_ROOT}/broken-snap.json" bash "${FILTER}" --smudge)"
+if [ "${out_ns}" = "${in_raw}" ] && [ "${out_bs}" = "${in_raw}" ]; then
+    pass "スナップショット無し / 壊れていると smudge は素通し"
+else
+    fail "smudge の素通しが不正"
+fi
 
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
