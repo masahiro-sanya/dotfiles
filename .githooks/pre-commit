@@ -4,6 +4,7 @@
 # - codex/hooks.json / claude/keybindings.json: JSON 妥当性
 # - launchd/*.plist.template: plist として読めるか
 # - 全 staged ファイル: 高確度の秘密パターン検知（AWSキー・GitHub PAT・秘密鍵 等）
+# - ~/.claude/private/denylist.txt（git 管理外・あれば）に一致する語が追加行に入っていないか
 # - *.sh: bash -n（staged 内容で検証）
 # - claude/hooks/*.sh が staged のときだけ hooks 回帰テストを実行
 # 配線: setup.sh が `git config core.hooksPath .githooks` を設定する
@@ -27,6 +28,18 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "${PWD}")"
 runtime_filter="${repo_root}/git/strip-claude-runtime.sh"
 
 run_hook_tests=0
+
+# 再混入チェック: 公開リポに載せたくない語のパターン（rg の正規表現・1 行 1 つ・'#' 始まりと空行は無視）を
+# git 管理外の denylist から読む。無い／rg が無いときは何もしない。
+# 一致した語そのものは出さない（ログや画面に残さないため）。テスト用に PRECOMMIT_DENYLIST で差し替え可
+denylist_file="${PRECOMMIT_DENYLIST:-${HOME}/.claude/private/denylist.txt}"
+denylist_pats=""
+if [ -f "${denylist_file}" ] && command -v rg >/dev/null 2>&1; then
+    denylist_pats="$(mktemp)"
+    trap 'command rm -f "${denylist_pats}"' EXIT
+    /usr/bin/grep -vE '^[[:space:]]*(#|$)' "${denylist_file}" > "${denylist_pats}" 2>/dev/null || true
+    [ -s "${denylist_pats}" ] || { command rm -f "${denylist_pats}"; denylist_pats=""; }
+fi
 
 # 高確度の秘密パターン（形式が確定的なもののみ。誤検知を抑えるため緩いパターンは入れない）
 # AWS アクセスキー / GitHub PAT（新旧）/ Slack token / Anthropic API key / Google API key / PEM 秘密鍵
@@ -66,6 +79,28 @@ while IFS= read -r f; do
             fi
             ;;
     esac
+
+    # denylist 検知（追加行だけを見る）
+    # パス自体が一致したときはパスも出さない（語がそのまま画面に残るため）。
+    # rg の終了コード 2（パターン不正等）は「一致なし」と区別して知らせる
+    if [ -n "${denylist_pats}" ]; then
+        printf '%s\n' "${f}" | rg -q -f "${denylist_pats}" 2>/dev/null
+        path_rc=$?
+        if [ "${path_rc}" -eq 0 ]; then
+            err "denylist に一致するファイルパスが staged されています（パスは表示しません）"
+        fi
+        git diff --cached -U0 -- "${f}" 2>/dev/null | /usr/bin/grep -E '^\+' | /usr/bin/grep -vE '^\+\+\+ ' | rg -q -f "${denylist_pats}" 2>/dev/null
+        line_rc=$?
+        if [ "${line_rc}" -eq 0 ]; then
+            if [ "${path_rc}" -eq 0 ]; then
+                err "denylist に一致する追加行があります（パスは表示しません）"
+            else
+                err "denylist に一致する追加行があります: ${f}"
+            fi
+        elif [ "${line_rc}" -ge 2 ] || [ "${path_rc}" -ge 2 ]; then
+            printf 'pre-commit: denylist のパターンを rg が読めず、検査できませんでした\n' >&2
+        fi
+    fi
 
     # 秘密パターン検知（staged 内容全体を対象。このリポに秘密が存在してよい場所はない）
     if git show ":${f}" 2>/dev/null | /usr/bin/grep -qE "${secret_pat}"; then

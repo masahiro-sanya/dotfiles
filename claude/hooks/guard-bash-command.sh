@@ -5,7 +5,7 @@
 #   - git の --no-verify をブロック（「テストを無効化・スキップしない」）
 #   - main/master への直接 git commit をブロック（「feature branchで作業」）
 #   - 監査ログ（guard-hits / hooks-error / traces）の削除・上書きをブロック
-#   - --dangerously-skip-permissions の実行をブロック（Light ガイドライン）
+#   - --dangerously-skip-permissions の実行をブロック（社内の AI 利用ガイドライン）
 # exit 2 + stderr で Claude にブロック理由が差し戻される
 
 set -u
@@ -177,7 +177,7 @@ if [ -n "${unsafe_del}" ]; then
     exit 2
 fi
 
-# 監査ログの改変防止（Light ガイドライン「検知の回避をしない・監査ログを正当な理由なく
+# 監査ログの改変防止（社内の AI 利用ガイドライン「検知の回避をしない・監査ログを正当な理由なく
 # 削除しない」の機械化）。対象: ~/.claude/guard-hits.log（guard 発火テレメトリ）・
 # ~/.claude/hooks-error.log（fail-open 痕跡）・~/.claude/logs/traces/（trace ログ）。
 # 破壊系コマンド（rm/mv/shred/unlink/truncate/tee/dd）が同一パイプライン区切り内で
@@ -189,18 +189,18 @@ audit_paths='\.claude/(guard-hits\.log|hooks-error\.log|logs/traces)'
 if printf '%s\n' "${cmd}" | /usr/bin/grep -qE "${cmd_pos}(rm|mv|shred|unlink|truncate|tee|dd)[[:space:]][^|;&]*${audit_paths}" \
     || printf '%s\n' "${cmd}" | /usr/bin/grep -qE "(^|[^>])>[|]?[[:space:]]*[^[:space:]>]*${audit_paths}"; then
     log_block "audit-log-tamper-blocked" "${cmd}"
-    echo "監査ログ（~/.claude/guard-hits.log・hooks-error.log・logs/traces/）の削除・移動・上書きはしない（Light AI利用ガイドライン: 監査ログを正当な理由なく削除しない）。読み取りと追記（>>）は可能。整理が必要ならユーザーが手動で行ってください。" >&2
+    echo "監査ログ（~/.claude/guard-hits.log・hooks-error.log・logs/traces/）の削除・移動・上書きはしない（社内の AI 利用ガイドライン: 監査ログを正当な理由なく削除しない）。読み取りと追記（>>）は可能。整理が必要ならユーザーが手動で行ってください。" >&2
     exit 2
 fi
 
 # 以降の --no-verify / git commit 検知も cmd_stripped（上で算出）で行う。
 # コミットメッセージ本文に書いただけで誤爆しないようにするため。
 
-# 権限確認の一括スキップ禁止（Light ガイドライン第3条の機械化）。
+# 権限確認の一括スキップ禁止（社内の AI 利用ガイドラインの機械化）。
 # クォート内の言及（ドキュメント・メッセージ）は cmd_stripped で除去済みのため誤爆しない。
 if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -q -- '--dangerously-skip-permissions'; then
     log_block "dangerously-skip-blocked" "${cmd_stripped}"
-    echo "--dangerously-skip-permissions は実行しない・提案しない（Light AI利用ガイドライン: 権限確認の一括スキップ禁止）。権限が要る操作は通常の許可フローで進めてください。" >&2
+    echo "--dangerously-skip-permissions は実行しない・提案しない（社内の AI 利用ガイドライン: 権限確認の一括スキップ禁止）。権限が要る操作は通常の許可フローで進めてください。" >&2
     exit 2
 fi
 

@@ -267,52 +267,11 @@
   "enabledPlugins": {
     "slack@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true,
-    "dev-ticket@light-skills": true,
-    "github-analyze-member@light-skills": false,
-    "fix-pr-reviews@light-skills": true,
-    "gcp-monitoring@light-skills": false,
-    "claude-session-manager@light-skills": true,
-    "stack-pr-merge@light-skills": true,
-    "slack-tools@light-skills": false,
-    "retrospective-tools@light-skills": true,
-    "gogcli@light-skills": true,
-    "gcp-prod-guard@light-skills": true,
-    "check-release-pr@light-skills": true,
-    "gcp-log-tools@light-skills": true,
-    "palmu-api-doc@light-skills": true,
-    "win-session-tools@light-skills": false,
-    "post-release-check@light-skills": true,
-    "prepare-release-staging@light-skills": true,
-    "cmux-handoff@light-skills": false,
-    "new-desktop-app@light-skills": false,
-    "new-web-app@light-skills": false,
-    "create-slides@light-skills": false,
-    "create-html@light-skills": true,
-    "ai-slop-review@light-skills": true,
-    "app-security-check@light-skills": false,
     "superpowers@superpowers-marketplace": true,
     "document-skills@anthropic-agent-skills": false,
-    "example-skills@anthropic-agent-skills": false,
-    "fukai@light-skills": false,
-    "konishi@light-skills": false,
-    "claude-code-toolkit@light-skills": true,
-    "palmu-ai-dashboard-collector@light-skills": true,
-    "infra-check@light-skills": true,
-    "offboarding-checker@light-skills": true,
-    "check-release-cross-repo@light-skills": true,
-    "lhs@light-skills": true,
-    "collect-feed@light-skills": true,
-    "check-release-full@light-skills": true,
-    "prod-alert-triage@light-skills": true,
-    "light-skills-updater@light-skills": true
+    "example-skills@anthropic-agent-skills": false
   },
   "extraKnownMarketplaces": {
-    "light-skills": {
-      "source": {
-        "source": "github",
-        "repo": "light-inc/light-skills"
-      }
-    },
     "superpowers-marketplace": {
       "source": {
         "source": "github",

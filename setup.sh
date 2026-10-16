@@ -83,9 +83,9 @@ fi
 
 # Register the clean filter that strips Claude Code runtime fields from
 # claude/settings.json on `git add` (see .gitattributes / git/strip-claude-runtime.sh).
-# Repo-local: the filter only applies to this dotfiles repo. smudge=cat (no-op on checkout).
+# Repo-local: the filter only applies to this dotfiles repo. smudge re-adds the stripped marketplace entries from a local snapshot (no-op without one).
 git -C "$DOTFILES_DIR" config filter.strip-claude-runtime.clean  "bash $DOTFILES_DIR/git/strip-claude-runtime.sh"
-git -C "$DOTFILES_DIR" config filter.strip-claude-runtime.smudge cat
+git -C "$DOTFILES_DIR" config filter.strip-claude-runtime.smudge "bash $DOTFILES_DIR/git/strip-claude-runtime.sh --smudge"
 info "Registered git clean filter 'strip-claude-runtime' for this repo"
 
 # --- WezTerm ---
@@ -188,7 +188,30 @@ done
 echo "--- Codex ---"
 backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
 # Codex は CLAUDE.md を読まないため、両エージェント共通の運用ルールは AGENTS.md で渡す
-backup_and_link "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
+# 会社固有の節は ~/.claude/private/AGENTS.codex.md（git 管理外）にあり、Codex は import できないので
+# あれば連結した実ファイルを生成する。無ければ従来どおり symlink
+CODEX_PRIVATE_AGENTS="${CLAUDE_PRIVATE_DIR:-$HOME/.claude/private}/AGENTS.codex.md"
+if [ -f "$CODEX_PRIVATE_AGENTS" ]; then
+    codex_agents_tmp="$(mktemp)"
+    {
+        echo "<!-- setup.sh が生成。編集は codex/AGENTS.md（と ~/.claude/private/AGENTS.codex.md）へ -->"
+        cat "$DOTFILES_DIR/codex/AGENTS.md"
+        echo
+        cat "$CODEX_PRIVATE_AGENTS"
+    } > "$codex_agents_tmp"
+    # symlink のまま書くとリポ側を上書きするので、symlink / 内容違いのときだけ退避してから置く
+    if [ -L "$HOME/.codex/AGENTS.md" ] || ! cmp -s "$codex_agents_tmp" "$HOME/.codex/AGENTS.md"; then
+        backup_existing "$HOME/.codex/AGENTS.md"
+        mkdir -p "$HOME/.codex"
+        cp "$codex_agents_tmp" "$HOME/.codex/AGENTS.md"
+        info "Generated: $HOME/.codex/AGENTS.md (codex/AGENTS.md + private)"
+    else
+        warn "Already up to date: $HOME/.codex/AGENTS.md"
+    fi
+    rm -f "$codex_agents_tmp"
+else
+    backup_and_link "$DOTFILES_DIR/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
+fi
 
 # --- mise ---
 echo "--- mise ---"

@@ -1,10 +1,10 @@
 #!/bin/bash
 # morning-prep: /morning スキルの非対話・機械部分を launchd で事前実行する
-# （claude 本体更新 / plugin marketplace 更新 / light-skills pull）
+# （claude 本体更新 / plugin marketplace 更新 / 登録リポの pull）
 #
 # 設計方針:
 # - 各ステップは独立。失敗してもログに残して次へ進む（朝一は完走優先）
-# - 外部に繋ぐステップは打ち切り時間を持つ（marketplace update が light-skills で 20 分超止まった実例あり）
+# - 外部に繋ぐステップは打ち切り時間を持つ（marketplace update が 20 分超止まった実例あり）
 # - 失敗・打ち切り・pull 停止は最後に 1 回だけ通知する（ログだけだと誰も気づかない）
 # - ログは ~/.claude/morning-prep.log に追記
 # - 完了したら ~/.claude/.morning-prep-last に日付を書き、/morning 側が skip 判定に使う
@@ -35,7 +35,7 @@ add_problem() {
     fi
 }
 
-# 打ち切り処理（run_with_timeout）は collect-feed-prep.sh と共通の lib-timeout.sh に置く。
+# 打ち切り処理（run_with_timeout）は 他のスクリプトと共通の lib-timeout.sh に置く。
 # 打ち切ると kill -9 で終わるので rc は 137 になる
 # ~/.claude/scripts/ の symlink 経由で起動されても dotfiles 側の実体の隣を見る
 SCRIPT_DIR="$(dirname "$(/usr/bin/perl -MCwd -e 'print Cwd::abs_path(shift)' "$0")")"
@@ -106,33 +106,52 @@ else
     log "plugin marketplace update: SKIP (claude が見つからない)"
 fi
 
-# --- 3. light-skills の pull（dirty なら skip） ---
-LIGHT_SKILLS_DIR="${HOME}/src/palmu/light-skills"
-if [ -e "${LIGHT_SKILLS_DIR}/.git" ]; then
-    if [ -n "$(git -C "${LIGHT_SKILLS_DIR}" status --porcelain 2>/dev/null)" ]; then
-        log "light-skills pull: SKIP (working tree が dirty)"
-        add_problem "light-skills が未コミット変更ありで pull 停止中"
-    else
-        # 認証プロンプトで止まらないよう GIT_TERMINAL_PROMPT=0、ネットワーク待ちは打ち切り時間で切る
-        GIT_TERMINAL_PROMPT=0 run_with_timeout "${STEP_TIMEOUT}" git -C "${LIGHT_SKILLS_DIR}" pull --ff-only >> "${LOG_FILE}" 2>&1
-        rc=$?
-        if [ ${rc} -eq 0 ]; then
-            log "light-skills pull: OK"
+# --- 3. 登録リポの pull（dirty なら skip） ---
+# 対象は ~/.claude/private/morning-prep-repos.txt（git 管理外・1 行 1 パス・~ 始まり可・'#' 以降は注釈）。
+# ファイルが無ければ何もしない。テスト用に MORNING_PREP_REPOS_FILE で差し替え可
+REPOS_FILE="${MORNING_PREP_REPOS_FILE:-${HOME}/.claude/private/morning-prep-repos.txt}"
+pull_repo() {
+    local repo_dir="$1"
+    local name
+    name="$(basename "${repo_dir}")"
+    if [ -e "${repo_dir}/.git" ]; then
+        if [ -n "$(git -C "${repo_dir}" status --porcelain 2>/dev/null)" ]; then
+            log "${name} pull: SKIP (working tree が dirty)"
+            add_problem "${name} が未コミット変更ありで pull 停止中"
         else
-            # 打ち切り（kill -9）は git が index.lock を消す暇を与えない。残すと翌日以降の pull も
-            # "index.lock exists" で失敗し続けるので、自分で殺した分だけここで片付ける
-            if [ ${rc} -eq 137 ]; then
-                lock="$(git -C "${LIGHT_SKILLS_DIR}" rev-parse --absolute-git-dir 2>/dev/null)/index.lock"
-                if [ -f "${lock}" ]; then
-                    rm -f "${lock}" && log "light-skills pull: 打ち切りで残った index.lock を削除"
+            # 認証プロンプトで止まらないよう GIT_TERMINAL_PROMPT=0、ネットワーク待ちは打ち切り時間で切る
+            GIT_TERMINAL_PROMPT=0 run_with_timeout "${STEP_TIMEOUT}" git -C "${repo_dir}" pull --ff-only < /dev/null >> "${LOG_FILE}" 2>&1
+            rc=$?
+            if [ ${rc} -eq 0 ]; then
+                log "${name} pull: OK"
+            else
+                # 打ち切り（kill -9）は git が index.lock を消す暇を与えない。残すと翌日以降の pull も
+                # "index.lock exists" で失敗し続けるので、自分で殺した分だけここで片付ける
+                if [ ${rc} -eq 137 ]; then
+                    lock="$(git -C "${repo_dir}" rev-parse --absolute-git-dir 2>/dev/null)/index.lock"
+                    if [ -f "${lock}" ]; then
+                        rm -f "${lock}" && log "${name} pull: 打ち切りで残った index.lock を削除"
+                    fi
                 fi
+                log "${name} pull: FAILED $(describe_rc ${rc}) (続行)"
+                add_problem "${name} pull $(describe_rc ${rc})"
             fi
-            log "light-skills pull: FAILED $(describe_rc ${rc}) (続行)"
-            add_problem "light-skills pull $(describe_rc ${rc})"
         fi
+    else
+        # 登録したのに git リポでない＝パスの書き間違い・移動。ログだけだと気づかないので通知にも載せる
+        log "${name} pull: SKIP (git リポではない: ${repo_dir})"
+        add_problem "${name} が git リポではないため pull 対象外（morning-prep-repos.txt を確認）"
     fi
-else
-    log "light-skills pull: SKIP (git リポではない: ${LIGHT_SKILLS_DIR})"
+}
+if [ -f "${REPOS_FILE}" ]; then
+    while IFS= read -r repo_line || [ -n "${repo_line}" ]; do
+        repo_line="$(printf '%s' "${repo_line}" | sed 's/#.*//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -z "${repo_line}" ] && continue
+        case "${repo_line}" in
+            "~"|"~/"*) repo_line="${HOME}${repo_line#\~}" ;;
+        esac
+        pull_repo "${repo_line}"
+    done < "${REPOS_FILE}"
 fi
 
 # --- 完了スタンプ（/morning が今日実行済みかの判定に使う） ---

@@ -14,6 +14,6 @@ fi
 . "$HOME/.vite-plus/env"
 
 # ~/.local/bin (claude CLI 等) は非対話シェルからも見えるようにする。
-# .zshrc は対話シェルでしか読まれず、GUI アプリ (LightDeskHub 等) が
+# .zshrc は対話シェルでしか読まれず、GUI アプリが
 # 起動するシェルから claude が見つからなくなるため .zshenv 側に置く。
 export PATH="$HOME/.local/bin:$PATH"
