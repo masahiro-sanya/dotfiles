@@ -1,7 +1,7 @@
 ---
 name: daily-report
-description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）と Notion「開発タスク一覧」の自分の担当タスクを踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は Notion「開発タスク一覧」の現在地とのずれも列挙する（提示まで。更新は dev-ticket の担当）。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
-allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date *), Bash(fd *), Bash(rg *), Bash(git log *), Bash(~/.claude/skills/morning/session-status.py *), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
+description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）と Notion「開発タスク一覧」の自分の担当タスク・今日のカレンダーを踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は Notion「開発タスク一覧」の現在地とのずれも列挙する（提示まで。更新は dev-ticket の担当）。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
+allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date *), Bash(fd *), Bash(rg *), Bash(git log *), Bash(~/.claude/skills/morning/session-status.py *), Bash(gog calendar events primary *), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
 ---
 
 # 日報サイクル
@@ -64,6 +64,11 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq 
    - 宣言の材料にするのは **完了予定日が今日以前（＝遅延）か今週内**のもの。`ステータス=保留` と、**リリースが実バージョン（`3.11.0` 等）でないもの**（バックログ）は材料から外す
    - **優先順位の根拠に使う**: 遅延しているチケットがあれば、宣言の 1 番はそれを閉じる方向に置く（前日採点の「明日への一手」と競合したら、遅延チケットを 1 番・一手を 2 番にする）
    - **Notion 側は書き換えない**（このスキルは読むだけ。ステータス更新は `dev-ticket` スキルの担当）
+4b. **今日の自分の予定を読む（＝作業に使える時間の見積もり）**: `gog calendar events primary --today` を main で直接実行する（数行なので委譲しない。morning 連携時もここで取る）。`primary` 以外（`--all`）は購読中の他人のカレンダーまで混ざるので使わない。
+   - 会議・1on1・外出が多い日は、宣言の項目数か達成ラインを小さくする（会議で埋まった日に通常日と同じ量を積まない）
+   - 準備が要る予定（1on1・発表・レビュー会など）は、準備を宣言のタスクか達成ラインに入れる
+   - 末尾の「今日確定している割り込み」行に予定名だけ書く。**時刻は書かない**（分量ルールの「時刻を書かない」と同じ。定例の朝会・休憩枠のように毎日あるものは書かない）
+   - `gog` が無い・認証切れ・API エラーのときは ⚠️ でスキップし、残りの材料で宣言を組む（直し方を 1 行添えるだけで止めない）
 5. ドラフトを**提示と同時に当日ファイルへ `## 宣言（下書き）YYYY-MM-DD` として保存**し、ユーザーと 1-2 往復で確定したら見出しを `## 宣言 YYYY-MM-DD` に置き換える（確定前に会話が切れても材料が残る。下書きのままの日は夜モードが下書きと突き合わせる）:
 
 ```
