@@ -241,6 +241,30 @@ assert 0 guard-bash-command.sh "別セグメントの rm と監査ログ読み�
 assert 2 guard-bash-command.sh "dangerously-skip-permissions はブロック" "$(bash_json "claude --dangerously-skip-permissions -p task")"
 assert 0 guard-bash-command.sh "引用符内の dangerously-skip 言及は許可" "$(bash_json "echo 'never use --dangerously-skip-permissions'")"
 
+# gh pr/issue edit の空 --body-file（本文の全消し防止。2026-09-04 の実事故）
+: > "${TMP_ROOT}/empty-body.md"
+: > "${TMP_ROOT}/f"
+printf ' \n\n' > "${TMP_ROOT}/blank-body.md"
+printf '## 概要\n本文\n' > "${TMP_ROOT}/body.md"
+assert 2 guard-bash-command.sh "空ファイルの --body-file はブロック" "$(bash_json "gh pr edit 12 --body-file empty-body.md")"
+assert 2 guard-bash-command.sh "空白だけのファイルもブロック" "$(bash_json "gh pr edit 12 --body-file blank-body.md")"
+assert 2 guard-bash-command.sh "-F 短縮形もブロック" "$(bash_json "gh pr edit 12 -F empty-body.md")"
+assert 2 guard-bash-command.sh "--body-file= 形式もブロック" "$(bash_json "gh pr edit 12 --body-file=empty-body.md")"
+assert 2 guard-bash-command.sh "gh issue edit もブロック" "$(bash_json "gh issue edit 5 --body-file empty-body.md")"
+assert 2 guard-bash-command.sh "-R 付きでもブロック" "$(bash_json "gh -R o/r pr edit 12 --body-file ${TMP_ROOT}/empty-body.md")"
+assert 2 guard-bash-command.sh "クォートしたパスでもブロック" "$(bash_json "gh pr edit 12 --body-file '${TMP_ROOT}/empty-body.md'")"
+assert 2 guard-bash-command.sh "&& 後の空 --body-file もブロック" "$(bash_json "git status && gh pr edit 12 --body-file empty-body.md")"
+assert 2 guard-bash-command.sh "1 文字の名前でも --body-file 自身と数え違えない" "$(bash_json "gh pr edit 12 -F f")"
+assert 2 guard-bash-command.sh "ペイロードの cwd から相対パスを解決する" \
+    "$(/usr/bin/jq -cn --arg cmd "gh pr edit 1 -F empty-body.md" --arg cwd "${TMP_ROOT}" '{cwd: $cwd, tool_input: {command: $cmd}}')" "/"
+assert 0 guard-bash-command.sh "中身のあるファイルは許可" "$(bash_json "gh pr edit 12 --body-file body.md")"
+assert 0 guard-bash-command.sh "存在しないファイルは許可（gh がエラーで止まる）" "$(bash_json "gh pr edit 12 --body-file no-such.md")"
+assert 0 guard-bash-command.sh "stdin（-）は許可" "$(bash_json "printf x | gh pr edit 12 --body-file -")"
+assert 0 guard-bash-command.sh "変数のパスは許可（判定不能）" "$(bash_json 'gh pr edit 12 --body-file "$F"')"
+assert 0 guard-bash-command.sh "同じコマンドで書き込むパスは許可" "$(bash_json "gh pr view 12 --json body -q .body >| empty-body.md && gh pr edit 12 --body-file empty-body.md")"
+assert 0 guard-bash-command.sh "test -s で確かめてからの投入は許可" "$(bash_json "test -s empty-body.md && gh pr edit 12 --body-file empty-body.md")"
+assert 0 guard-bash-command.sh "gh pr create の --body-file は対象外" "$(bash_json "gh pr create --title x --body-file empty-body.md")"
+
 echo "== guard-review-push.sh =="
 
 assert 2 guard-review-push.sh "ゲートリポで未レビュー push はブロック" "$(bash_json "git push")" "${REPO_GATED}"

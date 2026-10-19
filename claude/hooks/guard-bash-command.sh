@@ -6,6 +6,7 @@
 #   - main/master への直接 git commit をブロック（「feature branchで作業」）
 #   - 監査ログ（guard-hits / hooks-error / traces）の削除・上書きをブロック
 #   - --dangerously-skip-permissions の実行をブロック（社内の AI 利用ガイドライン）
+#   - gh pr/issue edit に空の --body-file を渡すのをブロック（本文の全消し防止）
 # exit 2 + stderr で Claude にブロック理由が差し戻される
 
 set -u
@@ -226,6 +227,48 @@ if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}git([[:space:]
             exit 2
         fi
     fi
+fi
+
+# gh pr edit / gh issue edit の --body-file（-F）に空のファイルを渡すのをブロック。
+# gh は空ファイルでもそのまま通し、PR / Issue の本文を全部消す。
+# 実測: 2026-09-04、失敗したコマンドのリダイレクトが先に作った 0 バイトのファイルを
+# 別の文で渡して PR 本文を全消しした（復旧は GraphQL の userContentEdits から）。
+# 判定はフック時点でファイルが存在し、空白以外の文字が 1 つも無いときだけ。
+# 素通しする形:
+#   - 存在しないファイル（gh 自身がエラーで止まり、本文は消えない）
+#   - `-`（stdin）、変数・コマンド置換を含むパス（フック時点で中身を決められない）
+#   - 同じコマンド内でそのパスに別の言及があるもの（`... >| f && gh pr edit -F f` のように
+#     フック時点の中身が古い。`test -s f && ...` の確認付きもここに入る）
+# 相対パスはペイロードの cwd（無ければ PWD）から解決する。`cd x && gh ...` の cd は追わない。
+hook_cwd="$(printf '%s' "${input}" | /usr/bin/jq -r '.cwd // empty' 2>/dev/null)"
+[ -z "${hook_cwd}" ] && hook_cwd="${PWD}"
+body_files="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -ne '
+    # 先にリスト文脈で全部拾う（while (//g) の中で $_ に別の //g をかけると pos が戻って無限ループする）
+    my @raws = /(?:^|[|;&(`\n]|\$\()[ \t]*(?:command[ \t]+)?gh[ \t]+(?:-R[ \t]+\S+[ \t]+)?(?:pr|issue)[ \t]+edit\b[^|;&\n]*?(?:--body-file(?:=|[ \t]+)|-F[ \t]+)(\S+)/gm;
+    for my $raw (@raws) {
+        (my $p = $raw) =~ s/^["\x27]|["\x27]$//g;
+        next if $p eq "-" || $p =~ /[\$`]/;
+        # 部分一致で数えると短い名前（f 等）が --body-file 自身に当たるので、語の境界で数える
+        my $n = () = /(?:^|[\s=>"\x27])\Q$p\E(?=$|[\s"\x27;&|)])/g;
+        next if $n > 1;
+        print "$p\n";
+    }
+' 2>/dev/null)"
+if [ -n "${body_files}" ]; then
+    while IFS= read -r bf; do
+        case "${bf}" in
+            "~"*) bf="${HOME}${bf#\~}" ;;
+            /*) ;;
+            *) bf="${hook_cwd}/${bf}" ;;
+        esac
+        if [ -f "${bf}" ] && ! /usr/bin/grep -q '[^[:space:]]' "${bf}" 2>/dev/null; then
+            log_block "gh-empty-body-file-blocked" "${cmd}"
+            echo "--body-file に渡すファイルが空です（${bf}）。gh pr/issue edit は空でもそのまま通し、本文を全部消します。本文を取り直し、test -s で中身があることを確かめてから渡してください（取得と投入は 1 本の && で繋ぐ）。" >&2
+            exit 2
+        fi
+    done <<EOF
+${body_files}
+EOF
 fi
 
 exit 0
