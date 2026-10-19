@@ -1,12 +1,12 @@
 ---
 name: morning
-description: 朝一ルーチン。Claude Code 更新 → プラグイン更新 → 全プロジェクトのセッション進捗確認（＋Notion 開発タスク一覧）→ 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Read, Write, Skill, Task, Agent
+description: 朝一ルーチン。Claude Code 更新 → プラグイン更新 → 全プロジェクトのセッション進捗確認（＋Notion 開発タスク一覧）→ 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）→ 予定に連動する準備（該当の予定がある日だけ）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Bash(gog calendar events primary *), Read, Write, Skill, Task, Agent
 ---
 
 # 朝一ルーチン
 
-毎朝最初に実行する個人ワークフロー。8 ステップ（手順 6 は月初のみ・手順 7 は週初のみ）なので **TaskCreate で進捗管理** すること（TaskCreate が無いセッションでは、応答の中で「いま手順いくつ・残りどれ」を明示する）。
+毎朝最初に実行する個人ワークフロー。9 ステップ（手順 6 は月初のみ・手順 7 は週初のみ・手順 9 は該当の予定がある日だけ）なので **TaskCreate で進捗管理** すること（TaskCreate が無いセッションでは、応答の中で「いま手順いくつ・残りどれ」を明示する）。
 
 > **委譲方針（手順 3・4・5・7・8）**: 収集・実行そのものはサブエージェントに投げ、main は判断・講評・提示・サマリだけ持つ（daily-report 夜モードと同じ型で、生ログを main の文脈に持ち込まない）。手順 3・4・7 の収集は **investigator**（read 専用・要約返し）に委譲する（手順 5 などの会社固有の手順は private の手順書に従う）。**冒頭で重い委譲をまとめて並列起動する（体感速度の要）**: ルーチン開始時に、独立している **手順 3（セッション調査＋Notion 開発タスク一覧）・手順 4（PR状況）を 1 メッセージで同時に投げる**（週初はこれに手順 7 の収集も加える。private の手順書に重い収集があれば同じバッチに乗せる）。投げたら main は待つ間に手順 1・2（更新）を進め、返ってきたものから順に処理する（手順 8 の宣言は手順 3・4 が揃ってから）。手順 8 の宣言作成は **daily-report（朝モード）** に委譲し、手順 3・4 の結果を材料として渡す（宣言ロジックを morning に持たない＝真実は daily-report 側 1 箇所）。
 >
@@ -125,6 +125,13 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 - daily-report が使えない・eval-config 未設定などは daily-report 側で ⚠️ 縮退する（morning は止めない・完走優先）。
 - 宣言まで作らない日は、ユーザーが承認ゲートで見送ればよい（サマリには「見送り」と記す）。
 
+### 9. 予定に連動する準備（該当の予定がある日だけ）
+
+`~/.claude/private/skills/morning.md` に「手順 9」があれば従う（無ければスキップし、サマリに「対象なし」と記す）。
+今日のカレンダーに特定の予定があるときだけ、その準備をするスキルを起動する手順。
+どの予定でどのスキルを起動するかは private 側に書く（スキル名・予定名が会社固有のため）。
+手順 8 の宣言が確定してから実行する（書き込みを伴うスキルが多く、宣言の承認待ちと重ねない）。
+
 ## 最終サマリ
 
 全ステップ完了後、以下を出す：
@@ -140,6 +147,7 @@ daily-report 側が前日ファイルの「明日やること」＋前日採点�
 6. memory還流: 提案 <N> 件（採用 <M> 件）（または "今月実施済み" / "月初でないためスキップ"）
 7. ハーネス健全性: 委譲 general-purpose <N> / 自作 <M>・guard発火 <K> 件・fail-open <L> 件（または "今週実施済み" / "週初でないためスキップ"）
 8. 宣言: 投稿済み / ドラフト提示（または "見送り"）
+9. 予定連動: <起動したスキルと結果>（または "該当の予定なし" / "対象なし"）
 ```
 
 ## 注意事項
