@@ -119,6 +119,7 @@ Skill ツールで `daily-report` を **朝モード**で起動し、次を伝�
 - 手順 4 で取得した **自分のオープン PR 一覧**（`gh search prs --author=@me` 相当の分）
 - 手順 3 で取得した **Notion「開発タスク一覧」の自分のタスク**（完了予定日昇順の 5 列。daily-report 朝モード step 4 の材料）
 
+今日のカレンダーは渡さない（daily-report 朝モード step 4b が自分で取る）。
 daily-report 側が前日ファイルの「明日やること」＋前日採点を読み合わせ、これらを材料に今日の宣言ドラフトを作る。以降はドラフト提示 → ユーザー承認 → **投稿先チャンネルへ投稿**まで daily-report の標準フローに従う（morning はその結果を最終サマリに載せるだけ）。
 
 - daily-report が使えない・eval-config 未設定などは daily-report 側で ⚠️ 縮退する（morning は止めない・完走優先）。
