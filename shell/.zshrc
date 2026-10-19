@@ -128,7 +128,8 @@ cw() {
     done
     [[ -n "$repo" ]] || return 1
   fi
-  cd "$repo" && command claude
+  # claude ラッパー（下）を通して起動時の名前付けを効かせる
+  cd "$repo" && claude
 }
 
 # cw のリポ名補完
@@ -166,9 +167,38 @@ if [[ -t 0 && -t 1 ]]; then
         esac
         ;;
     esac
-    command claude "$@"
+    local -a name_args
+    name_args=(${(f)"$(_claude_auto_name "$@")"})
+    command claude "${name_args[@]}" "$@"
   }
 fi
+
+# 新規の対話セッションに `-n <リポ名>-<連番>` を付ける。
+# 名前はタブ名（herdr の agents 欄）と、他セッションから見える呼び出し名（ListAgents）の両方に出る。
+# 付けないと呼び出し名は `myrepo-fa` のような自動名になり、画面のどこにも出ないので見分けられない。
+# 名前の指定・再開・非対話（-p）・サブコマンドのときは何も出さない。
+# 連番は実行中の claude プロセスが使っている `-n <リポ名>-N` を避けた最小の番号。
+_claude_auto_name() {
+  local arg prefix n procs
+  case "$1" in
+    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|purge|respawn|rm|setup-token|stop|kill|ultrareview|update|upgrade) return 0 ;;
+  esac
+  for arg in "$@"; do
+    case "$arg" in
+      -n|--name|--name=*|-r|--resume|--resume=*|-c|--continue|--from-pr|--from-pr=*|--session-id|--session-id=*|-p|--print|-h|--help|-v|--version) return 0 ;;
+    esac
+  done
+  prefix="$(git rev-parse --show-toplevel 2>/dev/null)"
+  prefix="${${prefix:-$PWD}:t}"
+  # 先に一覧を取ってから照合する（パイプで grep すると grep 自身の引数が一覧に載って一致し続ける）
+  procs="$(ps -axo command=)"
+  procs="${procs//$'\n'/ }"
+  n=1
+  while [[ " ${procs} " == *" -n ${(b)prefix}-${n} "* ]]; do
+    (( n++ ))
+  done
+  print -rl -- -n "${prefix}-${n}"
+}
 
 # chandoff: いま居る Claude Code セッションを Markdown に書き出して次セッションへ引き継ぐ。
 # セッション内で `!chandoff` として実行すると CLAUDE_CODE_SESSION_ID が渡り、
