@@ -1,6 +1,6 @@
 #!/bin/bash
 # morning-prep: /morning スキルの非対話・機械部分を launchd で事前実行する
-# （claude 本体更新 / plugin marketplace 更新 / 登録リポの pull）
+# （claude 本体更新 / plugin marketplace 更新 / 登録マーケットプレイスのプラグイン更新 / 登録リポの pull）
 #
 # 設計方針:
 # - 各ステップは独立。失敗してもログに残して次へ進む（朝一は完走優先）
@@ -104,6 +104,75 @@ if command -v claude >/dev/null 2>&1; then
     fi
 else
     log "plugin marketplace update: SKIP (claude が見つからない)"
+fi
+
+# --- 2b. 登録マーケットプレイスのプラグイン本体の更新 ---
+# marketplace update は一覧を新しくするだけで、入っているプラグインは古い版のまま残る
+# （朝の定時実行が更新前の版で走る）。user スコープのものを 1 件ずつ更新する。
+# 対象は ~/.claude/private/morning-prep-marketplaces.txt（git 管理外・1 行 1 マーケットプレイス名・'#' 以降は注釈）。
+# ファイルが無ければ何もしない（/morning の手順 2 が更新する）。テスト用に MORNING_PREP_MARKETPLACES_FILE で差し替え可。
+# -y / --accept-command は渡さない。マーケットプレイスが宣言したコマンドの確認を求められたら
+# 無人で承認せずスキップし、/morning の手順 2（人が見る）で更新させる
+MARKETPLACES_FILE="${MORNING_PREP_MARKETPLACES_FILE:-${HOME}/.claude/private/morning-prep-marketplaces.txt}"
+PLUGINS_FILE="${HOME}/.claude/plugins/installed_plugins.json"
+if [ ! -f "${MARKETPLACES_FILE}" ]; then
+    :
+elif [ "${PREP_FAILED}" -ne 0 ]; then
+    # 打ち切り・失敗の直後に 1 件 600 秒 × 全件を回すと何時間も居座るので、/morning の手順 2 に任せる
+    log "plugin update: SKIP (手順 1・2 が失敗したので /morning の手順 2 で更新させる)"
+elif ! command -v claude >/dev/null 2>&1; then
+    log "plugin update: SKIP (claude が見つからない)"
+elif ! command -v jq >/dev/null 2>&1; then
+    log "plugin update: SKIP (jq が見つからない)"
+    add_problem "plugin update が jq 不在で未実行"
+elif [ ! -r "${PLUGINS_FILE}" ]; then
+    log "plugin update: SKIP (${PLUGINS_FILE} を読めない)"
+    add_problem "plugin update が installed_plugins.json を読めず未実行"
+else
+    plugin_aborted=0
+    while IFS= read -r market || [ -n "${market}" ]; do
+        market="$(printf '%s' "${market}" | sed 's/#.*//' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -z "${market}" ] && continue
+        if ! plugin_list="$(jq -r --arg m "@${market}" '.plugins | to_entries[] | select((.key | endswith($m)) and any(.value[]; .scope == "user")) | .key' "${PLUGINS_FILE}" 2>> "${LOG_FILE}")"; then
+            log "plugin update ${market}: SKIP (${PLUGINS_FILE} を解釈できない)"
+            add_problem "plugin update ${market} が installed_plugins.json を解釈できず未実行"
+            continue
+        fi
+        plugin_ok=0
+        plugin_ng=""
+        while IFS= read -r plugin; do
+            [ -z "${plugin}" ] && continue
+            if [ "${plugin_aborted}" -ne 0 ]; then
+                plugin_ng="${plugin_ng} ${plugin%@"${market}"}(打ち切り後で未実行)"
+                continue
+            fi
+            # stdin を塞いで確認プロンプトで止まらないようにする（非 TTY では -y 無しの確認は拒否される）
+            out="$(run_with_timeout "${STEP_TIMEOUT}" claude plugin update "${plugin}" -s user --json < /dev/null 2>&1)"
+            rc=$?
+            log "plugin update ${plugin}: rc=${rc} ${out}"
+            if printf '%s' "${out}" | grep -q 'shownCommand'; then
+                log "plugin update ${plugin}: SKIP (マーケットプレイス宣言のコマンドに確認が要る)"
+                plugin_ng="${plugin_ng} ${plugin%@"${market}"}(要確認)"
+            elif [ ${rc} -eq 0 ]; then
+                plugin_ok=$((plugin_ok + 1))
+            else
+                log "plugin update ${plugin}: FAILED $(describe_rc ${rc}) (続行)"
+                plugin_ng="${plugin_ng} ${plugin%@"${market}"}($(describe_rc ${rc}))"
+                # 1 件打ち切られたらネットワークが詰まっている。残りも 600 秒ずつ待つと何時間も居座るので止める
+                [ ${rc} -eq 137 ] && plugin_aborted=1
+            fi
+        done <<< "${plugin_list}"
+        if [ "${plugin_ok}" -eq 0 ] && [ -z "${plugin_ng}" ]; then
+            # 対象 0 件は名前の書き間違いか、jq の絞り込みが installed_plugins.json の形と合わなくなった疑い
+            log "plugin update ${market}: 対象 0 件（morning-prep-marketplaces.txt と ${PLUGINS_FILE} の形を確認）"
+            add_problem "plugin update ${market} の対象が 0 件"
+        elif [ -n "${plugin_ng}" ]; then
+            log "plugin update ${market}: OK ${plugin_ok} 件、未更新:${plugin_ng}"
+            add_problem "plugin update ${market} 未更新:${plugin_ng}"
+        else
+            log "plugin update ${market}: OK ${plugin_ok} 件"
+        fi
+    done < "${MARKETPLACES_FILE}"
 fi
 
 # --- 3. 登録リポの pull（dirty なら skip） ---

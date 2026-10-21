@@ -14,7 +14,7 @@ allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.
 
 ## 手順
 
-> **launchd 事前実行チェック**: まず `cat ~/.claude/.morning-prep-last` を確認し、**今日の日付なら手順 1・2 は launchd（morning-prep）実行済みとして skip** する（サマリには「launchd 実行済み」と記す）。日付が古い・ファイルが無い場合は通常どおり実行する。
+> **launchd 事前実行チェック**: まず `cat ~/.claude/.morning-prep-last` を確認し、**今日の日付なら手順 1 は launchd（morning-prep）実行済みとして skip** する（サマリには「launchd 実行済み」と記す）。日付が古い・ファイルが無い場合は通常どおり実行する。**手順 2 は日付に関わらず毎回実行する**（launchd がプラグイン本体まで更新済みでもすぐ終わる。手順 2 は更新以外の片付けと報告も担うので skip しない）。
 
 ### 1. Claude Code 本体を更新
 
