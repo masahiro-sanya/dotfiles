@@ -1302,6 +1302,12 @@ fi
 assert_out '"allow"' webfetch-guard.sh "許可ドメインは allow" "$(fetch_json "https://github.com/anthropics")"
 assert_out '"allow"' webfetch-guard.sh "クエリ無し https の未知ドメインは allow" "$(fetch_json "https://unknown-blog.example/post/1")"
 assert_out '"ask"' webfetch-guard.sh "クエリ付き未知ドメインは ask（判断補助）" "$(fetch_json "https://unknown-blog.example/s?q=1")"
+assert_out '"allow"' webfetch-guard.sh "単語を連結した長いパス（数字なし）は不透明トークン扱いしない" "$(fetch_json "https://unknown-blog.example/known_exploited_vulnerabilities")"
+assert_out '"ask"' webfetch-guard.sh "数字を含む長い塊は不透明トークンとして ask" "$(fetch_json "https://unknown-blog.example/p/h5fsby22l57tr2uitftbwcyj")"
+assert_out '"allow"' webfetch-guard.sh "数字は短い区画だけで長い塊は単語の連結なら allow" "$(fetch_json "https://unknown-blog.example/2024/known_exploited_vulnerabilities")"
+WF_LONG_PATH=$(printf 'abcdefghij1234567890abcdef/%.0s' $(seq 3000))
+assert_out '"ask"' webfetch-guard.sh "数字入りの塊が大量に並ぶ長い URL でも ask（SIGPIPE で判定を落とさない）" "$(fetch_json "https://unknown-blog.example/${WF_LONG_PATH}")"
+assert_out '"allow"' webfetch-guard.sh "prtimes の企業 RSS（クエリ付き）は許可ドメインで allow" "$(fetch_json "https://prtimes.jp/companyrdf.php?company_id=13971")"
 assert 0 webfetch-guard.sh "壊れた入力は fail-open" "not json"
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"

@@ -84,8 +84,11 @@ case "$HOST" in xn--*|*.xn--*) flags="${flags}punycode・";; esac
 case "$AUTHORITY" in \[*) flags="${flags}IPv6直書き・";; esac
 printf '%s' "$HOST" | grep -qE '^([0-9]{1,3}\.){3}[0-9]{1,3}$' && flags="${flags}IP直書き・"
 case "$URL" in *\?*) flags="${flags}クエリ文字列・";; esac
-# 24+ 連続の英数字/_/= = 不透明トークン/エンコード塊の疑い（host ラベル・path 双方を走査）
-printf '%s' "$URL" | grep -qE '[A-Za-z0-9_=]{24,}' && flags="${flags}長い不透明トークン・"
+# 24+ 連続の英数字/_/= で数字を含むもの = 不透明トークン/エンコード塊の疑い（host ラベル・path 双方を走査）
+# 数字を含まない塊（known_exploited_vulnerabilities / CreateRestoreCredentialRequest 等）は単語の連結なので数えない
+# grep -q で早期終了させると、長い URL で前段の grep -oE が SIGPIPE になり pipefail で判定が偽に倒れる（=allow）ため、変数に受けてから見る
+long_chunks=$(printf '%s' "$URL" | grep -oE '[A-Za-z0-9_=]{24,}' || true)
+case "${long_chunks}" in *[0-9]*) flags="${flags}長い不透明トークン・";; esac
 
 # (3a) フラグ皆無 = 外送ペイロードほぼゼロの https GET → 未知ドメインでも allow（狭い緩和）
 if [ -z "$flags" ]; then

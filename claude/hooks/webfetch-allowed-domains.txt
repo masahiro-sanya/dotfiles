@@ -39,3 +39,6 @@ qiita.com
 note.com
 speakerdeck.com
 connpass.com
+
+# --- プレスリリース（企業 RSS が ?company_id= 付きのため）---
+prtimes.jp
