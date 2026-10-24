@@ -14,7 +14,7 @@
   "[vue]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "extensions.autoUpdate": false,
+  "extensions.autoUpdate": "off",
   "extensions.autoCheckUpdates": false,
   "update.mode": "manual",
   "[json]": {
