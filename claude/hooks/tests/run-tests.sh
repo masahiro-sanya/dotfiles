@@ -363,6 +363,18 @@ assert 2 guard-outbound-comms.sh "sudo 経由の prompt もブロック" "$(oc_b
 assert 2 guard-outbound-comms.sh "bash -lc でくるんだ prompt もブロック" "$(oc_bash "bash -lc 'herdr agent prompt wA:p1 hi'")"
 assert 2 guard-outbound-comms.sh "sh -c でくるんだ prompt もブロック" "$(oc_bash "sh -c \"herdr pane send-text wA:p1 hi\"")"
 assert 2 guard-outbound-comms.sh "herdr agent start もブロック（既存ペインを潰す）" "$(oc_bash "herdr agent start wA:p1 claude")"
+# 中で herdr の送信を束ねるスクリプトは、起動そのものを送信として止める
+# ガードに渡すコマンド文字列としての `~` なので、展開されなくてよい
+# shellcheck disable=SC2088
+assert 2 guard-outbound-comms.sh "開き直しスクリプトの直接実行はブロック" "$(oc_bash "~/.claude/scripts/herdr-restart-sessions.sh wA:p1 wC:p6")"
+assert 2 guard-outbound-comms.sh "開き直しスクリプトを bash に渡してもブロック" "$(oc_bash "bash ~/.claude/scripts/herdr-restart-sessions.sh wA:p1")"
+assert 2 guard-outbound-comms.sh "開き直しスクリプトを bash -x に渡してもブロック" "$(oc_bash "/bin/bash -x claude/scripts/herdr-restart-sessions.sh wA:p1")"
+assert 2 guard-outbound-comms.sh "開き直しスクリプトを source してもブロック" "$(oc_bash "source ./herdr-restart-sessions.sh wA:p1")"
+assert 2 guard-outbound-comms.sh "&& の後の開き直しスクリプトもブロック" "$(oc_bash "cd ~ && herdr-restart-sessions.sh wA:p1")"
+assert 2 guard-outbound-comms.sh "クォートしたパスの開き直しスクリプトもブロック" "$(oc_bash "\"\$HOME/.claude/scripts/herdr-restart-sessions.sh\" wA:p1")"
+assert 2 guard-outbound-comms.sh "値を取るオプション付きの bash に渡してもブロック" "$(oc_bash "bash -o pipefail ~/.claude/scripts/herdr-restart-sessions.sh wA:p1")"
+assert 0 guard-outbound-comms.sh "開き直しスクリプトの構文確認（リダイレクト）は許可" "$(oc_bash "bash -n < claude/scripts/herdr-restart-sessions.sh")"
+assert 0 guard-outbound-comms.sh "開き直しスクリプトを読むだけなら許可" "$(oc_bash "rg -n wait claude/scripts/herdr-restart-sessions.sh")"
 
 # 「コマンド位置」の取りこぼしによる迂回（AI レビューで発覚）。
 # 素のラッパー形だけを固定していると、フラグ 1 個・キーワード 1 個で穴が再び開くので、

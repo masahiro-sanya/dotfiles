@@ -171,7 +171,7 @@ cmd_matches() {
 # 対人送信なら "分類<TAB>理由" を stdout に出して return 0、非該当は return 1。
 # $2 は再帰の深さ。`bash -c '…'` の中身を見に行くときだけ増える（外から渡さない）。
 classify_command() {
-    local _cmd _depth _inner _hit _cmd_head _wrap _path _cmd_pos _gh_opts _body _gog_flag _gog _gmail
+    local _cmd _depth _inner _hit _cmd_head _wrap _path _cmd_pos _gh_opts _body _gog_flag _gog _gmail _rs_end
     _depth="${2:-0}"
     _cmd="$(printf '%s\n' "$1" | strip_heredocs)"
     [ -z "${_cmd}" ] && return 1
@@ -272,6 +272,17 @@ classify_command() {
     if cmd_matches \
         "${_cmd_pos}herdr[^|;&]*[[:space:]](agent[[:space:]]+(prompt|send-keys|start)|pane[[:space:]]+(send-text|send-keys|run))([[:space:]]|$)"; then
         printf 'herdr-agent-send\t他のセッション／エージェントのペインへ入力を送り込もうとしています。宛先ペインと本文をユーザーに提示して承認を得てください。\n'
+        return 0
+    fi
+    # 中で herdr の送信を束ねて叩くスクリプト（morning の開き直し）。中の herdr はこのガードの
+    # 外で走るので、起動そのものを送信として扱う。直接実行のほか、bash / sh / zsh / source に
+    # パスを渡す形も見る。構文確認はリダイレクトで渡す（`bash -n < <path>`）。
+    # 名前の後ろはクォート・区切りも終端として扱う（`"~/…/herdr-restart-sessions.sh" wA:p1` の形）。
+    # シェルの引数は値を取るオプション（`-o pipefail`）もあるので、`<` `>` を含まない語なら何個でも読み飛ばす
+    _rs_end='([[:space:]"'"'"';&|)`]|$)'
+    if cmd_matches "${_cmd_pos}herdr-restart-sessions(\.sh)?${_rs_end}" \
+        || cmd_matches "${_cmd_pos}(bash|sh|zsh|dash|ksh|source|\.)([[:space:]]+[^[:space:]|;&<>]+)*[[:space:]]+${_path}herdr-restart-sessions(\.sh)?${_rs_end}"; then
+        printf 'herdr-agent-send\t他のセッションのペインを開き直そうとしています（/handoff・/exit・claude の起動を送り込む）。宛先ペインをユーザーに提示して承認を得てください。\n'
         return 0
     fi
 
