@@ -110,6 +110,7 @@ cat <<'EOF'
   4. Claude Code 起動後、/plugin で marketplace プラグインを導入
      （Slack / Google Drive / 業務用プラグインなど）
   5. notion MCP は初回接続時にブラウザで OAuth 認証
+  6. gog は brew で入れない。Developer ID 署名版を ~/.local/bin/gog に置く（Brewfile の gogcli のコメント参照）
 
 新シェルを開く: exec zsh -l
 EOF

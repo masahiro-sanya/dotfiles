@@ -14,7 +14,9 @@ brew "fzf"
 brew "gh"
 brew "git-delta"
 brew "go"
-brew "gogcli"
+# gogcli は brew で入れない。homebrew-core の bottle は ad-hoc 署名で、上げるたびにキーチェーンの「常に許可」が外れる。
+# Developer ID 署名版を https://github.com/openclaw/gogcli/releases から ~/.local/bin/gog に置く（`codesign -dv` で TeamIdentifier が出ることを確かめる）。
+# 更新は brew upgrade に乗らないので手で差し替える。brew 版が入っている Mac は `brew uninstall gogcli` で外す
 brew "grep"
 # herdr: Claude Code / Codex を pane ごとに常駐させ、状態（blocked/working/done/idle）を見て
 # エージェント同士を繋ぐための multiplexer。サーバは brew services ではなく必要時に手で起動する
