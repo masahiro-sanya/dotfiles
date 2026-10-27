@@ -7,6 +7,7 @@
 # ペインごとに次を順に行う。
 #   1. /handoff 書く を送り、引き継ぎファイル（<リポの memory>/handoff-<セッション名>.md）が書き直されるのを待つ
 #   2. /exit を送り、ペインに claude のプロセスが残っていないことを確かめる
+#      （バックグラウンドの処理が残っていて確認画面が出たら、Esc で閉じて止める）
 #   3. 同じセッション名で claude を開き直し、/handoff 読むだけ で引き継ぎを読ませる
 #
 # 設計方針:
@@ -61,6 +62,20 @@ pane_info() {
 only_shell_left() {
     herdr pane process-info --pane "$1" 2>/dev/null \
         | jq -e '[.result.process_info.foreground_processes[] | select((.name // "") | test("^-?(zsh|bash|sh)$") | not)] | length == 0' >/dev/null
+}
+
+# /exit がバックグラウンドの処理を止めてよいかを聞く画面を出していれば 0、出ていなければ 1、
+# 画面を読めなければ 2。確認画面は画面の下端に出るので、会話の本文と取り違えないよう下の数行だけ見る
+BG_DIALOG_LINES=15
+bg_dialog_shown() {
+    local _screen
+    _screen="$(herdr pane read "$1" --source visible 2>/dev/null)" || return 2
+    # 確認画面の下は空行で埋まるので、末尾の空行を落としてから下の行を取る
+    _screen="$(printf '%s\n' "${_screen}" | awk -v n="${BG_DIALOG_LINES}" '
+        { l[NR] = $0 } NF { last = NR }
+        END { s = last - n + 1; if (s < 1) s = 1; for (i = s; i <= last; i++) print l[i] }')"
+    printf '%s\n' "${_screen}" | grep -qF 'Background work is running' \
+        && printf '%s\n' "${_screen}" | grep -qF 'Exit and stop tasks'
 }
 
 # "<状態>\t<完了番号>" を返す。完了番号はターンが終わるたびに変わる
@@ -146,12 +161,41 @@ restart_pane() {
         result "${_pane}" "${_name}" "停止: /exit を送れなかった（引き継ぎは書けている）"
         return
     fi
-    local _i
+    local _i _dialog _read_failed
     _i=0
+    _read_failed=0
     while ! only_shell_left "${_pane}"; do
         _i=$((_i + 1))
+        # バックグラウンドの処理が残っていると、/exit は止めてよいかを聞く画面で待つ。
+        # 止めるかどうかは人が決めるので選ばずに Esc で閉じ、セッションをそのまま残す。
+        # 会話の本文に同じ文言があっても普通に抜ける間は拾わないよう、2 回目の確認から見る
+        if [ "${_i}" -ge 2 ]; then
+            bg_dialog_shown "${_pane}"
+            _dialog=$?
+            [ "${_dialog}" -eq 2 ] && _read_failed=1
+        else
+            _dialog=1
+        fi
+        if [ "${_dialog}" -eq 0 ]; then
+            if ! herdr agent send-keys "${_pane}" esc >/dev/null 2>&1; then
+                result "${_pane}" "${_name}" "停止: バックグラウンドの処理が残っていて、確認画面を Esc で閉じられなかった（ペインを開いて選ぶ）"
+                return
+            fi
+            # 読んだあとで人が選んで抜けていたら、Esc はシェルに入っている。残ったと報告しない
+            sleep 1
+            if only_shell_left "${_pane}"; then
+                result "${_pane}" "${_name}" "要確認: 確認画面を閉じる前に claude が抜けていた（開き直していない。引き継ぎは書けている）"
+            else
+                result "${_pane}" "${_name}" "停止: バックグラウンドの処理が残っている（止めるかはペインで決める。引き継ぎは書けている）"
+            fi
+            return
+        fi
         if [ "${_i}" -ge "${EXIT_POLLS}" ]; then
-            result "${_pane}" "${_name}" "停止: /exit のあとも claude が残っている"
+            if [ "${_read_failed}" -eq 1 ]; then
+                result "${_pane}" "${_name}" "停止: /exit のあとも claude が残っている（画面を読めず、確認画面か確かめられない）"
+            else
+                result "${_pane}" "${_name}" "停止: /exit のあとも claude が残っている"
+            fi
             return
         fi
         sleep 2
