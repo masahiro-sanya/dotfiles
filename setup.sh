@@ -302,3 +302,4 @@ echo " 10. Auth GCP:          gcloud auth login && gcloud auth application-defau
 echo " 11. Claude Code settings.local.json は手動で設定（許可ルール・プラグイン等）"
 echo " 12. 対人送信ガードの許可リスト（任意。設定しなければ Slack メンションは全部ブロック）:"
 echo "     cp claude/outbound-allowlist.env.sample ~/.claude/outbound-allowlist.env  # 実値を書く"
+echo " 13. gog は brew で入れない。Developer ID 署名版を ~/.local/bin/gog に置く（Brewfile の gogcli のコメント参照）"
