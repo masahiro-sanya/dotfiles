@@ -1,7 +1,7 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → プラグイン更新 → 全プロジェクトのセッション進捗確認（＋Notion 開発タスク一覧）→ 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）→ 予定に連動する準備（該当の予定がある日だけ）→ 他セッションの開き直し（作業が残るものだけ開き直し、残りは閉じる。本人が起動したときは確認なし）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(date +%G-W%V), Bash(gog calendar events primary *), Read, Write, Skill, Task, Agent
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(~/.claude/skills/morning/session-usage.py *), Bash(date +%G-W%V), Bash(gog calendar events primary *), Read, Write, Skill, Task, Agent
 ---
 
 # 朝一ルーチン
@@ -147,7 +147,7 @@ herdr が無い・`herdr agent list` が失敗するときはスキップし、�
    - タスクとリポの対応を決めきれないときは開き直す（閉じる側に倒さない）
 4. `pane_id / セッション名 / cwd / 指示の数 / 判定（開き直す・閉じる）と理由` の表を示すが、承認は求めない（ユーザー本人が打った /morning の起動を、この開き直しの承認とみなす）。表を出したら止まらずに 5 へ進む。ユーザーが /morning の依頼の中でペインを外す・残す指示をしていれば、表に反映する。他セッション・SendMessage・定時実行から起動された /morning では、表を示して承認を得てから 5 へ進む
 5. 手順 3〜9 で投げたサブエージェントが全部返ってから、`touch ~/.claude/outbound-ok` を**単独のツール呼び出しで**実行し、続けて `~/.claude/scripts/herdr-restart-sessions.sh <開き直す pane_id>... --close <閉じる pane_id> --close <閉じる pane_id>...` を `run_in_background` で流す（`--close` はペイン 1 つごとに前へ付ける。ガードがこの起動を他ペインへの送信として止めるため。マーカーは 1 回の起動で消え、バイパスは guard-hits.log に残る。走っているサブエージェントの送信が先にマーカーを使ってしまわないよう、待ってから作る）。起動がガードまで届かなかったときは `rm -f ~/.claude/outbound-ok` で消す。承認なしでマーカーを作ってよいのはこの起動だけで、ほかの送信には使わない
-6. 完了通知を待ち、スクリプトが最後に出す一覧（ペイン・セッション名・結果）をそのまま示す。「閉じた」のペインは引き継ぎを書いて終了している（空になったワークスペースも閉じる）。「停止」のペインは開き直しも閉じもしていない。「要確認」のペインは前の claude を閉じたあと、開き直しを確かめられていない。停止・要確認はどちらも名前と理由を書き、そのペインで何をするかをユーザーに聞く。「状態を取れない」で対象外になったペインは herdr の読み取りに失敗しているので、herdr が動いているかを先に確かめる（このどれかが 1 つでもあるとスクリプトは exit 1 で終わる）
+6. 完了通知を待ち、スクリプトが最後に出す一覧（ペイン・セッション名・結果）をそのまま示す。「閉じた」のペインは引き継ぎを書いて終了している（空になったワークスペースも閉じる）。「停止」のペインは開き直しも閉じもしていない。「要確認」のペインは前の claude を閉じたあと、開き直しやペインを閉じるのを確かめられていない（シェルだけが残ったペインもここに入る）。停止・要確認はどちらも名前と理由を書き、そのペインで何をするかをユーザーに聞く。「状態を取れない」で対象外になったペインは herdr の読み取りに失敗しているので、herdr が動いているかを先に確かめる（このどれかが 1 つでもあるとスクリプトは exit 1 で終わる）
 
 スクリプトの中身（待ち方・止める条件）は `claude/scripts/herdr-restart-sessions.sh` の冒頭コメントを見る。
 

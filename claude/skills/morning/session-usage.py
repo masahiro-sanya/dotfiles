@@ -13,6 +13,7 @@ Usage:
 記録が見つからない名前は指示の数を "-" にする（呼び出し側は「使われている」側に倒す）。
 """
 import json
+import mmap
 import sys
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ AUTO_PREFIXES = (
     "<local-command-",
     "<system-reminder>",
     "This session is being continued",
+    "[Request interrupted by user",
 )
 # 開き直しの流れで送られるコマンド
 AUTO_COMMANDS = ("/handoff", "/exit")
@@ -54,22 +56,43 @@ def is_user_prompt(text):
     return True
 
 
+TITLE_KEY = b'"customTitle":"'
+
+
+def current_title(path):
+    """記録の最後の customTitle（＝今の名前）を返す。改名前の名前では拾わない。
+    記録は大きいので全体を読み込まず、末尾から 1 回だけ探す"""
+    with path.open("rb") as f:
+        try:
+            m = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        except ValueError:  # 空のファイル
+            return None
+        with m:
+            i = m.rfind(TITLE_KEY)
+            if i < 0:
+                return None
+            start = i + len(TITLE_KEY)
+            end = m.find(b'"', start)
+            if end < 0:
+                return None
+            return m[start:end].decode("utf-8", errors="replace")
+
+
 def latest_transcripts(names):
-    """名前ごとに、その名前が付いた一番新しい記録を返す。記録は 1 回だけ読む"""
+    """名前ごとに、その名前が付いた一番新しい記録を返す"""
     cutoff = time.time() - RECENT_DAYS * 86400
-    needles = {name: f'"customTitle":"{name}"' for name in names}
+    wanted = set(names)
     latest = {}
     for p in ROOT.glob("*/*.jsonl"):
         try:
             mtime = p.stat().st_mtime
             if mtime < cutoff:
                 continue
-            text = p.read_text(errors="replace")
+            name = current_title(p)
         except OSError:
             continue
-        for name, needle in needles.items():
-            if needle in text and (name not in latest or mtime > latest[name][0]):
-                latest[name] = (mtime, p)
+        if name in wanted and (name not in latest or mtime > latest[name][0]):
+            latest[name] = (mtime, p)
     return {name: p for name, (_, p) in latest.items()}
 
 
