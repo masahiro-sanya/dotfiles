@@ -203,7 +203,8 @@ restart_pane() {
     fi
     # 閉じる判定のあとで使われた（完了番号が対象を確かめたときから変わった）ペインは、閉じずに開き直す
     _before="$(printf '%s\n' "${_state}" | cut -f2)"
-    if [ "${_mode}" = "close" ] && [ -n "${_seq0}" ] && [ -n "${_before}" ] && [ "${_before}" != "${_seq0}" ]; then
+    # 完了番号を取れないときは使われたかを確かめられないので、閉じずに開き直す側に倒す
+    if [ "${_mode}" = "close" ] && { [ -z "${_seq0}" ] || [ -z "${_before}" ] || [ "${_before}" != "${_seq0}" ]; }; then
         _mode=reopen
     fi
 
