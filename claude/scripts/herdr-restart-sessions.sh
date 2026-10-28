@@ -1,14 +1,17 @@
 #!/bin/bash
-# herdr-restart-sessions: herdr の Claude セッションを、引き継ぎを書かせてから開き直す
-# （/morning の「全セッションの開き直し」から呼ぶ。手で叩いてもよい）
+# herdr-restart-sessions: herdr の Claude セッションを、引き継ぎを書かせてから開き直す（または閉じる）
+# （/morning の「他セッションの開き直し」から呼ぶ。手で叩いてもよい）
 #
-# 使い方: herdr-restart-sessions.sh <pane_id>...
+# 使い方: herdr-restart-sessions.sh [--close] <pane_id> [[--close] <pane_id>]...
+#   --close を前に付けたペインは、開き直さずに閉じる
 #
 # ペインごとに次を順に行う。
 #   1. /handoff 書く を送り、引き継ぎファイル（<リポの memory>/handoff-<セッション名>.md）が書き直されるのを待つ
 #   2. /exit を送り、ペインに claude のプロセスが残っていないことを確かめる
 #      （バックグラウンドの処理が残っていて確認画面が出たら、Esc で閉じて止める）
 #   3. 同じセッション名で claude を開き直し、/handoff 読むだけ で引き継ぎを読ませる
+#      --close のペインは開き直さずにペインを閉じ、ワークスペースが空になればそれも閉じる
+#      （開き直しただけで使われないセッションが、1 本あたり MCP サーバー込みで 1GB 近く使い続けるため）
 #
 # 設計方針:
 # - 他のペインへ入力を送り込むので、guard-outbound-comms.sh はこのスクリプトの起動自体を
@@ -35,10 +38,24 @@ READ_TIMEOUT_MS=600000
 # 抜けたあと claude のプロセスが消えるまで待つ回数（2 秒ごと）
 EXIT_POLLS=30
 
-if [ "$#" -eq 0 ]; then
-    echo "usage: $(basename "$0") <pane_id>..." >&2
+usage() {
+    echo "usage: $(basename "$0") [--close] <pane_id> [[--close] <pane_id>]..." >&2
     exit 2
-fi
+}
+[ "$#" -eq 0 ] && usage
+# --close の後ろにペインが無い・知らないオプションがあれば、何も送らずに止める
+_after_close=0
+for _arg in "$@"; do
+    case "${_arg}" in
+        --close)
+            [ "${_after_close}" -eq 1 ] && usage
+            _after_close=1
+            ;;
+        -*) usage ;;
+        *) _after_close=0 ;;
+    esac
+done
+[ "${_after_close}" -eq 1 ] && usage
 
 # セッション名として通す形（claude -n にそのまま渡してシェルで解釈されるため、記号を絞る）
 NAME_RE='^[A-Za-z0-9._-]+-[0-9]+$'
@@ -53,11 +70,11 @@ result() {
     printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "${WORK_DIR}/results"
 }
 
-# "<agent>\x1f<状態>\x1f<名前>\x1f<cwd>" を 1 回の herdr 呼び出しで返す。取れなければ空。
+# "<agent>\x1f<状態>\x1f<名前>\x1f<cwd>\x1f<ワークスペース>" を 1 回の herdr 呼び出しで返す。取れなければ空。
 # 区切りをタブにしないのは、read が空の欄を詰めて欄がずれるため
 pane_info() {
     herdr pane get "$1" 2>/dev/null \
-        | jq -r '.result.pane // empty | [.agent // "", .agent_status // "", .terminal_title_stripped // "", .cwd // ""] | join("\u001f")'
+        | jq -r '.result.pane // empty | [.agent // "", .agent_status // "", .terminal_title_stripped // "", .cwd // "", .workspace_id // ""] | join("\u001f")'
 }
 
 # ペインの前面に claude 以外（シェル）しか残っていなければ 0
@@ -124,11 +141,48 @@ memory_dir() {
     printf '%s/.claude/projects/%s/memory\n' "${HOME}" "$(dirname "${_common}" | sed 's/[^A-Za-z0-9]/-/g')"
 }
 
+# 開き直さないペインを閉じる。claude はもう抜けているので引き継ぎは残るが、ペインを閉じられなければ
+# シェルだけのペインが claude の表示のまま残るので「要確認」にする（「閉じた」に数えると exit 0 で見逃す）
+close_pane() {
+    local _pane _name _ws _panes
+    _pane="$1"
+    _name="$2"
+    _ws="$3"
+    if ! herdr pane close "${_pane}" >/dev/null 2>&1; then
+        result "${_pane}" "${_name}" "要確認: 引き継ぎを書いて claude は終了したが、ペインを閉じられずシェルが残っている"
+        return
+    fi
+    if [ -z "${_ws}" ]; then
+        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了"
+        return
+    fi
+    # ほかのペインが残るワークスペースは閉じない。herdr は失敗も JSON（.error）で stdout に返すので、
+    # .result.panes が配列で取れたときだけ数える（取れなければ触らない）
+    _panes="$(herdr pane list --workspace "${_ws}" 2>/dev/null \
+        | jq -r 'if (.result.panes | type) == "array" then (.result.panes | length) else empty end' 2>/dev/null)"
+    if [ -z "${_panes}" ]; then
+        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（ワークスペース ${_ws} は一覧を読めないので閉じていない）"
+        return
+    fi
+    if [ "${_panes}" != "0" ]; then
+        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（ワークスペース ${_ws} はほかのペインが残るので閉じていない）"
+        return
+    fi
+    if ! herdr workspace close "${_ws}" >/dev/null 2>&1; then
+        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（空のワークスペース ${_ws} は閉じられなかった）"
+        return
+    fi
+    result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（空になったワークスペース ${_ws} も閉じた）"
+}
+
 restart_pane() {
-    local _pane _name _mem _file _stamp _state _status _before
+    local _pane _name _mem _mode _ws _seq0 _file _stamp _state _status _before
     _pane="$1"
     _name="$2"
     _mem="$3"
+    _mode="$4"
+    _ws="$5"
+    _seq0="$6"
     _file="${_mem}/handoff-${_name}.md"
     _stamp="${WORK_DIR}/stamp-${_name}"
     touch "${_stamp}"
@@ -141,9 +195,20 @@ restart_pane() {
         result "${_pane}" "${_name}" "対象外: 送る直前に ${_status:-状態を取れない}（作業中に割り込まない）"
         return
     fi
+    # 前の実行が /exit のあとで止まった・ペインを閉じられなかったペインは、claude の表示のまま
+    # シェルだけが残っている。ここへ /handoff を送るとシェルのコマンドになるので送らない
+    if only_shell_left "${_pane}"; then
+        result "${_pane}" "${_name}" "要確認: claude が動いていない（シェルだけのペイン。開き直すか閉じるかをペインで決める）"
+        return
+    fi
+    # 閉じる判定のあとで使われた（完了番号が対象を確かめたときから変わった）ペインは、閉じずに開き直す
+    _before="$(printf '%s\n' "${_state}" | cut -f2)"
+    # 完了番号を取れないときは使われたかを確かめられないので、閉じずに開き直す側に倒す
+    if [ "${_mode}" = "close" ] && { [ -z "${_seq0}" ] || [ -z "${_before}" ] || [ "${_before}" != "${_seq0}" ]; }; then
+        _mode=reopen
+    fi
 
     # 1. 引き継ぎを書かせる。引数なしだと、会話の最初の発話のときに「読む」で動くので「書く」を付ける
-    _before="$(printf '%s\n' "${_state}" | cut -f2)"
     if ! herdr agent prompt "${_pane}" "/handoff 書く" >/dev/null 2>&1; then
         result "${_pane}" "${_name}" "停止: /handoff を送れなかった"
         return
@@ -203,6 +268,11 @@ restart_pane() {
         sleep 2
     done
 
+    if [ "${_mode}" = "close" ]; then
+        close_pane "${_pane}" "${_name}" "${_ws}"
+        return
+    fi
+
     # 3. 同じ名前で開き直し、引き継ぎを読ませる（読んだところで止まる）。
     #    ここから先で確かめられなかったものは、前の claude はもう閉じているので「要確認」にする
     #    （「開き直した」に数えない）
@@ -224,9 +294,16 @@ restart_pane() {
     result "${_pane}" "${_name}" "開き直した: 引き継ぎを読んで待機中"
 }
 
-# 対象を確かめ、"<memory>\t<pane>\t<name>\t<cwd>" の行にする
+# 対象を確かめ、"<memory>\t<pane>\t<name>\t<reopen|close>\t<ワークスペース>\t<完了番号>" の行にする
 : > "${WORK_DIR}/targets"
+_next_mode=reopen
 for pane in "$@"; do
+    if [ "${pane}" = "--close" ]; then
+        _next_mode=close
+        continue
+    fi
+    mode="${_next_mode}"
+    _next_mode=reopen
     if [ "${pane}" = "${HERDR_PANE_ID:-}" ]; then
         result "${pane}" "-" "対象外: 自分のペイン"
         continue
@@ -240,7 +317,7 @@ for pane in "$@"; do
         result "${pane}" "-" "対象外: herdr pane get で状態を取れない"
         continue
     fi
-    IFS="$(printf '\037')" read -r agent status name cwd <<EOF
+    IFS="$(printf '\037')" read -r agent status name cwd ws <<EOF
 ${info}
 EOF
     if [ "${agent}" != "claude" ]; then
@@ -260,7 +337,10 @@ EOF
         result "${pane}" "${name}" "対象外: git リポの外（${cwd}）"
         continue
     fi
-    printf '%s\t%s\t%s\n' "${mem}" "${pane}" "${name}" >> "${WORK_DIR}/targets"
+    # 閉じるペインは、この時点の完了番号を控える（同じリポの流れを待つ間に使われたら閉じない）
+    seq0=""
+    [ "${mode}" = "close" ] && seq0="$(agent_state "${pane}" | cut -f2)"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${mem}" "${pane}" "${name}" "${mode}" "${ws}" "${seq0}" >> "${WORK_DIR}/targets"
 done
 
 # リポ（memory）ごとに 1 本の流れにして、流れどうしは並べて走らせる。
@@ -271,9 +351,15 @@ while IFS= read -r mem; do
     _n=$((_n + 1))
     awk -F'\t' -v m="${mem}" '$1 == m' "${WORK_DIR}/targets" > "${WORK_DIR}/queue-${_n}"
     (
-        while IFS="$(printf '\t')" read -r _ pane name; do
+        while IFS= read -r line; do
+            # read の IFS にタブを使うと空の欄（ワークスペース・完了番号）が詰められて欄がずれるので cut で分ける
+            pane="$(printf '%s\n' "${line}" | cut -f2)"
+            name="$(printf '%s\n' "${line}" | cut -f3)"
+            mode="$(printf '%s\n' "${line}" | cut -f4)"
+            ws="$(printf '%s\n' "${line}" | cut -f5)"
+            seq0="$(printf '%s\n' "${line}" | cut -f6)"
             # herdr に while の入力を食わせない
-            restart_pane "${pane}" "${name}" "${mem}" < /dev/null
+            restart_pane "${pane}" "${name}" "${mem}" "${mode}" "${ws}" "${seq0}" < /dev/null
         done < "${WORK_DIR}/queue-${_n}"
     ) &
 done < "${WORK_DIR}/mems"
