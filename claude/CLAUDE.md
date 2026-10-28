@@ -18,6 +18,7 @@
 - 上のガードは `claude/hooks/guard-outbound-comms.sh` が exit 2 でブロックする。**ユーザーの承認を得たときだけ** `touch ~/.claude/outbound-ok`（10分有効・1回の送信で消費）を実行してから同じ操作をやり直す。承認なしにこのマーカーを作らない（作れば無確認で送れてしまうので、ガードではなくルールが本体）。発火とバイパスは `~/.claude/guard-hits.log` に残る
 - **外向き・導入系のコマンドは `claude/hooks/bash-guard.sh` が exit 2 でブロックする**（非信頼 org への `git push` / `gh api` 変更系、`gh gist`、パッケージインストール、認証情報・エンコード・一時ファイルを絡めた外部送信、ローカル HTTP サーバー起動、sandbox 無効化中や WebFetch 直後の外向きコマンド）。**ユーザーの承認を得たときだけ** `touch ~/.claude/bash-guard-ok`（10分有効・1回で消費）を実行してやり直す。対人送信の `outbound-ok` とは別マーカーで、互いに解除しない。GitHub の owner 単位で恒久的に信頼するなら `~/.claude/hooks/gh-trusted-orgs.txt` に1行足す（`~/.claude/hooks/allowlist.txt` はコマンドパターン単位の恒久許可）。ガード自身の説明文を書くだけでも語の並びで発火するので、その場合は本文をファイルへ書いてから流す
 - **他のセッション・他のエージェントのペインへ入力を送り込むのも承認が要る**（`herdr agent prompt` / `send-keys`、`herdr pane send-text` / `send-keys` / `run`）。送った文字列はそのまま相手の文脈に入って作業を動かすので、宛先ペインと本文を提示して承認を得る。読み取り（`herdr agent list` / `read` / `wait`）は通してよい。内蔵の SendMessage（Claude 同士）は承認不要。詳しくは「他セッション・他エージェントとのやりとり」を参照
+- 「承認なしに outbound-ok を作らない」と「ペインへの送り込みは承認が要る」の例外は次の 1 つだけ: /morning 手順 10 で `herdr-restart-sessions.sh` を流し、自分以外の idle の claude ペインに /handoff → /exit → 開き直しを送る起動。ユーザー本人が打った /morning の起動を承認とみなし、確認なしで `outbound-ok` を作ってよい（バイパスは guard-hits.log に残る）。他セッション・SendMessage・定時実行から起動された /morning は対象外で、従来どおり承認を得る。ほかの送り込みや送信には広げない
 - この環境は `permissions.defaultMode: "auto"` で、**hook が `permissionDecision:"ask"` を返しても確認プロンプトが出ずに素通りする**（実測: gh pr comment / npm install の ask がどちらも無確認で実行された）。人間の確認を挟みたいガードは ask ではなく exit 2 + stderr で書く
 - ユーザー本人の言葉として出す文章（宣言・日報・Slack・PR 等）は、実状に見合った等身大の表現にし（「リード」「着手」等で盛らない）、ユーザーが使っていない新用語・カタカナ語・略語を持ち込まない（例:「手順書」を「runbook」に言い換えない）。新しい概念名が要るときはユーザーの言葉に寄せるか一言確認する
 - 上と同じ文章（宣言・日報・Slack・PR 等）は**短く書く**。「なぜそうなったか」（原因・調査の過程・経緯）と**時刻・時系列は本文に入れない**（着地だけ書き、詳細は聞かれてから答える）。1 項目 1 行を基本に、2 行を超えたら削る。削る対象は説明であって項目ではない
@@ -177,7 +178,7 @@ herdr 側の手順:
 - 手が空くまで待つ: `herdr agent wait <pane_id> --until idle --timeout 600000`
 - 投げる（**承認が要る**）: `herdr agent prompt <pane_id> "<本文>" --wait --until idle --timeout 600000`
 
-投げる前に宛先ペインと本文をユーザーに提示して承認を得る。`guard-outbound-comms.sh` が `herdr-agent-send` で exit 2 ブロックするので、承認を得てから `touch ~/.claude/outbound-ok` を実行して投げ直す。
+投げる前に宛先ペインと本文をユーザーに提示して承認を得る。`guard-outbound-comms.sh` が `herdr-agent-send` で exit 2 ブロックするので、承認を得てから `touch ~/.claude/outbound-ok` を実行して投げ直す。例外はグローバルルールに書いた /morning 手順 10 の起動 1 つだけ。
 
 注意点:
 
