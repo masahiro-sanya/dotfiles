@@ -158,18 +158,20 @@ close_pane() {
     fi
     # ほかのペインが残るワークスペースは閉じない。herdr は失敗を JSON（.error）で stderr に返すので、
     # .result.panes が配列で取れたときだけ数える（取れなければ触らない）。
-    # 最後のペインを閉じると herdr がワークスペースごと消すので、workspace_not_found は「閉じた」に数える
+    # 最後のペインを閉じると herdr がワークスペースごと消すので、workspace_not_found は「消えた」と記録する。
+    # stderr を混ぜるので、JSON でない行は 1 行ずつ読み飛ばす
     _panes="$(herdr pane list --workspace "${_ws}" 2>&1 \
-        | jq -r 'if (.result.panes | type) == "array" then (.result.panes | length)
-                 elif .error.code == "workspace_not_found" then "gone" else empty end' 2>/dev/null)"
+        | jq -rR 'fromjson? | if (.result.panes | type) == "array" then (.result.panes | length)
+                 elif .error.code == "workspace_not_found" then "gone" else empty end' 2>/dev/null | head -1)"
     if [ "${_panes}" = "gone" ]; then
-        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（空になったワークスペース ${_ws} も閉じた）"
+        result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（最後のペインだったのでワークスペース ${_ws} も消えた）"
         return
     fi
     if [ -z "${_panes}" ]; then
         result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（ワークスペース ${_ws} は一覧を読めないので閉じていない）"
         return
     fi
+    # 件数 0 は、空のワークスペースを残す herdr の版への備え（0.9.5 は自分で消すのでここに来ない）
     if [ "${_panes}" != "0" ]; then
         result "${_pane}" "${_name}" "閉じた: 引き継ぎを書いて終了（ワークスペース ${_ws} はほかのペインが残るので閉じていない）"
         return
