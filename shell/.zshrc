@@ -167,11 +167,37 @@ if [[ -t 0 && -t 1 ]]; then
         esac
         ;;
     esac
-    local -a name_args
+    local -a name_args model_args
     name_args=(${(f)"$(_claude_auto_name "$@")"})
-    command claude "${name_args[@]}" "$@"
+    model_args=(${(f)"$(_claude_default_model "$@")"})
+    command claude "${model_args[@]}" "${name_args[@]}" "$@"
   }
 fi
+
+# 引数の先頭が claude のサブコマンド（セッションを開かないもの）なら 0
+_claude_is_subcommand() {
+  case "$1" in
+    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|purge|respawn|rm|setup-token|stop|kill|ultrareview|update|upgrade) return 0 ;;
+  esac
+  return 1
+}
+
+# 起動のたびに `--model default`（アカウントの既定モデル）を付ける。
+# /model で選んだモデルは settings.json の model に保存され、次の起動にも持ち越される。
+# 付けないと、一度 fable に切り替えたあとの起動・再開がずっと fable のままになる。
+# モデルを別の手段で決めたとき（--model・--agent・ANTHROPIC_MODEL）・サブコマンド・
+# ヘルプ・バージョン表示のときは何も出さない（--model は他の指定より優先されるため）。
+_claude_default_model() {
+  local arg
+  [[ -n "${ANTHROPIC_MODEL}" ]] && return 0
+  _claude_is_subcommand "$1" && return 0
+  for arg in "$@"; do
+    case "$arg" in
+      --model|--model=*|--agent|--agent=*|-h|--help|-v|--version) return 0 ;;
+    esac
+  done
+  print -rl -- --model default
+}
 
 # 新規の対話セッションに `-n <リポ名>-<連番>` を付ける。
 # 名前はタブ名（herdr の agents 欄）と、他セッションから見える呼び出し名（ListAgents）の両方に出る。
@@ -180,9 +206,7 @@ fi
 # 連番は実行中の claude プロセスが使っている `-n <リポ名>-N` を避けた最小の番号。
 _claude_auto_name() {
   local arg prefix n procs
-  case "$1" in
-    agents|attach|auth|auto-mode|doctor|gateway|import|install|logs|mcp|plugin|plugins|purge|respawn|rm|setup-token|stop|kill|ultrareview|update|upgrade) return 0 ;;
-  esac
+  _claude_is_subcommand "$1" && return 0
   for arg in "$@"; do
     case "$arg" in
       -n|--name|--name=*|-r|--resume|--resume=*|-c|--continue|--from-pr|--from-pr=*|--session-id|--session-id=*|-p|--print|-h|--help|-v|--version) return 0 ;;

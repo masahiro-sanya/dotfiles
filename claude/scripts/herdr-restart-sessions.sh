@@ -284,7 +284,8 @@ restart_pane() {
     # 3. 同じ名前で開き直し、引き継ぎを読ませる（読んだところで止まる）。
     #    ここから先で確かめられなかったものは、前の claude はもう閉じているので「要確認」にする
     #    （「開き直した」に数えない）
-    if ! herdr pane run "${_pane}" "claude -n ${_name} --permission-mode auto '/handoff 読むだけ'" >/dev/null 2>&1; then
+    #    モデルは前のセッションが /model で選んだもの（settings.json に残る）を引き継がず、既定で開く
+    if ! herdr pane run "${_pane}" "claude -n ${_name} --model default --permission-mode auto '/handoff 読むだけ'" >/dev/null 2>&1; then
         result "${_pane}" "${_name}" "要確認: claude を起動できなかった（閉じたままのペイン）"
         return
     fi
