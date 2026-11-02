@@ -6,7 +6,7 @@
 #   - main/master への直接 git commit をブロック（「feature branchで作業」）
 #   - 監査ログ（guard-hits / hooks-error / traces）の削除・上書きをブロック
 #   - --dangerously-skip-permissions の実行をブロック（社内の AI 利用ガイドライン）
-#   - gh pr/issue edit に空の --body-file を渡すのをブロック（本文の全消し防止）
+#   - gh pr edit/create・gh issue edit に空・存在しない --body-file を渡すのをブロック（本文の全消し防止）
 # exit 2 + stderr で Claude にブロック理由が差し戻される
 
 set -u
@@ -229,25 +229,36 @@ if printf '%s\n' "${cmd_stripped}" | /usr/bin/grep -qE "${cmd_pos}git([[:space:]
     fi
 fi
 
-# gh pr edit / gh issue edit の --body-file（-F）に空のファイルを渡すのをブロック。
-# gh は空ファイルでもそのまま通し、PR / Issue の本文を全部消す。
+# gh pr edit / gh pr create / gh issue edit の --body-file（-F）に、
+# 存在しない・空白だけ（0 バイトを含む）のファイルを渡すのをブロック。
+# gh は空ファイルでもそのまま通し、edit なら本文を全部消し、create なら本文の無い PR を作る。
+# 存在しないファイルは gh がエラーで止まるが、本文ファイルの書き込み失敗に気づかないまま
+# 同じやり方で再試行を重ねる元になるので、ここで理由を返して止める。
 # 実測: 2026-09-04、失敗したコマンドのリダイレクトが先に作った 0 バイトのファイルを
 # 別の文で渡して PR 本文を全消しした（復旧は GraphQL の userContentEdits から）。
-# 判定はフック時点でファイルが存在し、空白以外の文字が 1 つも無いときだけ。
 # 素通しする形:
-#   - 存在しないファイル（gh 自身がエラーで止まり、本文は消えない）
-#   - `-`（stdin）、変数・コマンド置換を含むパス（フック時点で中身を決められない）
+#   - `-`（stdin）、変数・コマンド置換・プロセス置換・グロブを含むパス（フック時点で中身を決められない）
+#   - 引用符の中に書かれた gh コマンド（--title / --body の文言・コミットメッセージ・bash -c の中身）
+#   - 引用符の途中で切れたパス・バックスラッシュを含むパス・`~user`（正しく取り出せない）
 #   - 同じコマンド内でそのパスに別の言及があるもの（`... >| f && gh pr edit -F f` のように
 #     フック時点の中身が古い。`test -s f && ...` の確認付きもここに入る）
+#   - 存在しない相対パスで、コマンド内に cd があるもの（cd 先を追わないので解決先が違いうる）
+#   - 通常ファイル以外（/dev/stdin 等）
 # 相対パスはペイロードの cwd（無ければ PWD）から解決する。`cd x && gh ...` の cd は追わない。
 hook_cwd="$(printf '%s' "${input}" | /usr/bin/jq -r '.cwd // empty' 2>/dev/null)"
 [ -z "${hook_cwd}" ] && hook_cwd="${PWD}"
 body_files="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -ne '
+    # --body-file / -F の直後以外の引用符の中身（--title・--body の文言、コミットメッセージ）を伏せる。
+    # 伏せないと `--title "fix --body-file guard"` の guard を本文ファイルと取り違えて止める。
+    (my $s = $_) =~ s/((?:--body-file(?:=|[ \t]+)|-F[ \t]+))?("[^"]*"|\x27[^\x27]*\x27)/defined $1 ? "$1$2" : "Q"/ge;
     # 先にリスト文脈で全部拾う（while (//g) の中で $_ に別の //g をかけると pos が戻って無限ループする）
-    my @raws = /(?:^|[|;&(`\n]|\$\()[ \t]*(?:command[ \t]+)?gh[ \t]+(?:-R[ \t]+\S+[ \t]+)?(?:pr|issue)[ \t]+edit\b[^|;&\n]*?(?:--body-file(?:=|[ \t]+)|-F[ \t]+)(\S+)/gm;
+    # パスは ; & | ( ) < > の手前で切る（`-F f; echo` や `$(gh ... -F f)` の記号をパスに含めない）
+    my @raws = $s =~ /(?:^|[|;&(`\n]|\$\()[ \t]*(?:command[ \t]+)?gh[ \t]+(?:-R[ \t]+\S+[ \t]+)?(?:pr[ \t]+(?:edit|create)|issue[ \t]+edit)\b[^|;&\n]*?(?:--body-file(?:=|[ \t]+)|-F[ \t]+)([^\s;&|()<>]+)/gm;
     for my $raw (@raws) {
+        # 引用符で始まって閉じていない（空白入りのパスが途中で切れた）ものは取り出せていない
+        next if $raw =~ /^["\x27]/ && $raw !~ /^(["\x27]).*\1$/;
         (my $p = $raw) =~ s/^["\x27]|["\x27]$//g;
-        next if $p eq "-" || $p =~ /[\$`]/;
+        next if $p eq "" || $p eq "-" || $p =~ /[\$`\\*?\[]/ || $p =~ /^~[^\/]/;
         # 部分一致で数えると短い名前（f 等）が --body-file 自身に当たるので、語の境界で数える
         my $n = () = /(?:^|[\s=>"\x27])\Q$p\E(?=$|[\s"\x27;&|)])/g;
         next if $n > 1;
@@ -255,15 +266,24 @@ body_files="$(printf '%s' "${cmd}" | /usr/bin/perl -0777 -ne '
     }
 ' 2>/dev/null)"
 if [ -n "${body_files}" ]; then
+    has_cd=0
+    printf '%s\n' "${cmd}" | /usr/bin/grep -qE '(^|[|;&(]|\$\(|`)[[:space:]]*(builtin[[:space:]]+)?(cd|pushd)([[:space:]]|$)' && has_cd=1
     while IFS= read -r bf; do
+        is_rel=0
         case "${bf}" in
-            "~"*) bf="${HOME}${bf#\~}" ;;
+            \~ | \~/*) bf="${HOME}${bf#\~}" ;;
             /*) ;;
-            *) bf="${hook_cwd}/${bf}" ;;
+            *) bf="${hook_cwd}/${bf}"; is_rel=1 ;;
         esac
+        if [ ! -e "${bf}" ]; then
+            [ "${is_rel}" -eq 1 ] && [ "${has_cd}" -eq 1 ] && continue
+            log_block "gh-missing-body-file-blocked" "${cmd}"
+            echo "--body-file に渡すファイルがありません（${bf}）。本文ファイルの書き込みが失敗している可能性があります。同じやり方で再試行せず、ファイルを書けたか（test -s）確かめてから渡してください。" >&2
+            exit 2
+        fi
         if [ -f "${bf}" ] && ! /usr/bin/grep -q '[^[:space:]]' "${bf}" 2>/dev/null; then
             log_block "gh-empty-body-file-blocked" "${cmd}"
-            echo "--body-file に渡すファイルが空です（${bf}）。gh pr/issue edit は空でもそのまま通し、本文を全部消します。本文を取り直し、test -s で中身があることを確かめてから渡してください（取得と投入は 1 本の && で繋ぐ）。" >&2
+            echo "--body-file に渡すファイルが空です（${bf}）。gh は空でもそのまま通し、edit は本文を全部消し、create は本文の無い PR を作ります。本文を取り直し、test -s で中身があることを確かめてから渡してください（取得と投入は 1 本の && で繋ぐ）。" >&2
             exit 2
         fi
     done <<EOF
