@@ -205,6 +205,8 @@ sandbox の `allowedDomains` でネットワークがブロックされたら、
 
 同一の subagent / Operator への同じ意図の委譲は 2 回まで。3 回目を呼ぼうとする時点で必ず停止してユーザーに状況を報告する（ハルシネーションループ・コスト破綻の構造的防止）。max_iterations を明示できる場合は subagent prompt に含める（推奨: 5）。
 
+委譲に限らず、コマンド・API 呼び出し・ツールの再試行も同じ。同じやり方が 2 回続けて失敗したら 3 回目を試さず、止まってユーザーに報告する（やり方を変えるなら、何を変えたかを先に書く）。
+
 ## Trace logging (PostToolUse hook)
 
 ツール呼び出しの構造化ログを `~/.claude/logs/traces/YYYY-MM-DD.jsonl` に蓄積している（観測性・失敗分析・コスト追跡・golden trace replay 用。ローカル限定で送信・外部公開は一切しない）。日次サマリ: `~/.claude/scripts/trace-summary.sh [YYYY-MM-DD]`
