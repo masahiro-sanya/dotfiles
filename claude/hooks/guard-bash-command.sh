@@ -271,7 +271,7 @@ if [ -n "${body_files}" ]; then
     while IFS= read -r bf; do
         is_rel=0
         case "${bf}" in
-            "~" | "~/"*) bf="${HOME}${bf#\~}" ;;
+            \~ | \~/*) bf="${HOME}${bf#\~}" ;;
             /*) ;;
             *) bf="${hook_cwd}/${bf}"; is_rel=1 ;;
         esac
