@@ -21,8 +21,10 @@
 #   確認なしでマーカーを作る（claude/CLAUDE.md の例外。バイパスは guard-hits.log に残る）
 # - 途中で詰まったペインはそこで止めて次のペインへ進む。止めたペインは開き直さない
 #   （引き継ぎを書けていないセッションを閉じると、作業の続きが消える）
-# - 同じリポのセッションは 1 つずつ、別のリポは並べて流す。同じ memory の MEMORY.md を
-#   同時に書き換えさせないため
+# - 同じリポのセッションは引き継ぎを書くところまで 1 つずつ、別のリポは並べて流す。同じ memory の
+#   MEMORY.md を同時に書き換えさせないため。開き直したあとの読み込みは引き継ぎも MEMORY.md も
+#   書かないので、その終わりは待たずに次のペインへ進む（待つのは裏に回す）。
+#   読み込みが流す git fetch 等は、同じリポの次のペインの処理と重なりうる
 # - 自分自身のペイン（HERDR_PANE_ID）は対象にしない
 # - macOS 標準 bash 3.2 互換で書く
 
@@ -107,23 +109,29 @@ agent_state() {
 # 送った直後は idle のままなので、working を見るか、完了番号が送る前（$2）から変わるまで待つ。
 # herdr agent wait は長く待つと idle への変化を取りこぼして返らなかったので、自分で 2 秒ごとに見る
 wait_turn() {
-    local _pane _before _limit _elapsed _seen _state _status _seq
+    local _pane _before _limit _elapsed _seen _state _status _seq _read
     _pane="$1"
     _before="$2"
     _limit=$(($3 / 1000))
     _elapsed=0
     _seen=0
+    _read=0
     while [ "${_elapsed}" -lt "${_limit}" ]; do
         # read の IFS にタブを使うと、空の状態が詰められて完了番号が状態の側に入るので cut で分ける
         _state="$(agent_state "${_pane}")"
         _status="$(printf '%s\n' "${_state}" | cut -f1)"
         _seq="$(printf '%s\n' "${_state}" | cut -f2)"
+        [ -n "${_status}" ] && _read=1
         case "${_status}" in
             working) _seen=1 ;;
-            idle|blocked)
+            idle|done|blocked)
                 # 送る前の完了番号が取れていないとき（空）は、番号の変化では判定しない。
                 # 空との比較だと、まだ動き出していない idle を「終わった」と取り違える
                 if [ "${_seen}" -eq 1 ] || { [ -n "${_before}" ] && [ -n "${_seq}" ] && [ "${_seq}" != "${_before}" ]; }; then
+                    # done は終わったあと画面がまだ見られていない状態で、手が空いているのは idle と同じ
+                    # （herdr agent wait も既定で idle・done・blocked を終わりに数える）。
+                    # done を拾わずにいたため、読み終えたペインが時間切れの「要確認」になっていた
+                    [ "${_status}" = "done" ] && _status=idle
                     printf '%s\n' "${_status}"
                     return
                 fi
@@ -132,6 +140,11 @@ wait_turn() {
         sleep 2
         _elapsed=$((_elapsed + 2))
     done
+    # 最後まで状態を読めなかったときは、herdr の読み取り失敗を時間切れと区別する（結果の「取れない」で拾う）
+    if [ "${_read}" -eq 0 ]; then
+        printf '状態を取れない\n'
+        return
+    fi
     printf 'timeout\n'
 }
 
@@ -295,12 +308,16 @@ restart_pane() {
     fi
     # 完了番号は、起動したあとの新しいセッションの値を基準にする（閉じる前の値は表示が残っているだけ）
     _before="$(agent_state "${_pane}" | cut -f2)"
-    _status="$(wait_turn "${_pane}" "${_before}" "${READ_TIMEOUT_MS}")"
-    if [ "${_status}" != "idle" ]; then
-        result "${_pane}" "${_name}" "要確認: 開き直したが読み込みのあと ${_status}（ペインを開いて確かめる）"
-        return
-    fi
-    result "${_pane}" "${_name}" "開き直した: 引き継ぎを読んで待機中"
+    # 読み込み（/handoff 読むだけ）は引き継ぎファイルも MEMORY.md も書かないので、終わるのを待たずに
+    # 同じリポの次のペインへ進む。待つのは裏に回し、流れの終わりでまとめて待つ
+    (
+        _status="$(wait_turn "${_pane}" "${_before}" "${READ_TIMEOUT_MS}")"
+        if [ "${_status}" != "idle" ]; then
+            result "${_pane}" "${_name}" "要確認: 開き直したが読み込みのあと ${_status}（ペインを開いて確かめる）"
+            exit 0
+        fi
+        result "${_pane}" "${_name}" "開き直した: 引き継ぎを読んで待機中"
+    ) &
 }
 
 # 対象を確かめ、"<memory>\t<pane>\t<name>\t<reopen|close>\t<ワークスペース>\t<完了番号>" の行にする
@@ -333,8 +350,10 @@ EOF
         result "${pane}" "${name:--}" "対象外: claude のペインではない（${agent:-なし}）"
         continue
     fi
+    # done（終えたあと画面が見られていない）は拾わない。人が読んでいない結果を画面ごと消さず、
+    # 前回開き直して誰も見ていないペインに引き継ぎを書き直させない
     if [ "${status}" != "idle" ]; then
-        result "${pane}" "${name:--}" "対象外: ${status}（作業中に割り込まない）"
+        result "${pane}" "${name:--}" "対象外: ${status}（作業中か、まだ見ていない結果がある）"
         continue
     fi
     # 名前はそのまま claude -n に渡してシェルで解釈されるので、リポ名-番号の形だけ通す
@@ -360,6 +379,9 @@ while IFS= read -r mem; do
     _n=$((_n + 1))
     awk -F'\t' -v m="${mem}" '$1 == m' "${WORK_DIR}/targets" > "${WORK_DIR}/queue-${_n}"
     (
+        # 親から止められたら、裏で読み込みを待っている分も止める（サブシェルは親の trap を引き継がない）。
+        # 親は TERM で止めに来る。& で裏に回したサブシェルは INT を無視したまま始まり trap できないので、TERM だけ受ける
+        trap 'kill $(jobs -p) 2>/dev/null; exit 143' TERM
         while IFS= read -r line; do
             # read の IFS にタブを使うと空の欄（ワークスペース・完了番号）が詰められて欄がずれるので cut で分ける
             pane="$(printf '%s\n' "${line}" | cut -f2)"
@@ -370,6 +392,8 @@ while IFS= read -r mem; do
             # herdr に while の入力を食わせない
             restart_pane "${pane}" "${name}" "${mem}" "${mode}" "${ws}" "${seq0}" < /dev/null
         done < "${WORK_DIR}/queue-${_n}"
+        # 裏に回した読み込みの待ちが全部終わってから流れを閉じる（結果の一覧に載せ漏れないように）
+        wait
     ) &
 done < "${WORK_DIR}/mems"
 wait
