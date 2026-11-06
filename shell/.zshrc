@@ -245,13 +245,13 @@ run-pending() {
     return 1
   fi
   local f="${HOME}/.claude/pending-cmd/${CLAUDE_CODE_SESSION_ID}.sh"
+  # 流されないまま終わったセッションの分は 1 日で消す（存在チェックより先に消し、消えた分は「無い」と案内する）
+  # （glob の修飾子はシェルの設定で効かないことがあるので、この中だけ設定を足す）
+  () { setopt localoptions nullglob bareglobqual; command rm -f "${HOME}"/.claude/pending-cmd/*.sh(.mh+24) }
   if [ ! -f "${f}" ]; then
     echo "run-pending: このセッションの保存済みコマンドがありません（${f}）" >&2
     return 1
   fi
-  # 流されないまま終わったセッションの分は 1 日で消す
-  # （glob の修飾子はシェルの設定で効かないことがあるので、この中だけ設定を足す）
-  () { setopt localoptions nullglob bareglobqual; command rm -f "${HOME}"/.claude/pending-cmd/*.sh(.mh+24) }
   # 中身を変数に取り出し、照合も実行もこの変数で行う（照合したものと流すものを同じにする）
   local cmd sha
   cmd="$(<"${f}")" || return 1
