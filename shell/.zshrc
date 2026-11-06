@@ -232,6 +232,30 @@ chandoff() {
   python3 "$HOME/src/dotfiles/claude/scripts/export-current-session.py" "$@"
 }
 
+# run-pending: Claude Code がこのセッション用に保存したコマンドを 1 回だけ流す。
+# 長いコマンドを画面からコピーすると、字下げのスペースと折り返しの改行が混ざる。
+# それを避けるため、Claude は ~/.claude/pending-cmd/<セッションID>.sh に書き、ユーザーは `! run-pending` と打つ。
+# ファイル名がセッション別なので、他のセッションが保存したコマンドは流れない。
+# 流す前に取り出して消すので、同じコマンドが二度走らない。
+run-pending() {
+  if [ -z "${CLAUDE_CODE_SESSION_ID}" ]; then
+    echo "run-pending: CLAUDE_CODE_SESSION_ID が空です（Claude Code の ! から実行してください）" >&2
+    return 1
+  fi
+  local f="${HOME}/.claude/pending-cmd/${CLAUDE_CODE_SESSION_ID}.sh"
+  if [ ! -f "${f}" ]; then
+    echo "run-pending: このセッションの保存済みコマンドがありません（${f}）" >&2
+    return 1
+  fi
+  local tmp="${f}.running.$$"
+  command mv -f "${f}" "${tmp}" || return 1
+  echo "+ $(cat "${tmp}")"
+  ( source "${tmp}" )
+  local rc=$?
+  command rm -f "${tmp}"
+  return ${rc}
+}
+
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
 export PIP_INDEX_URL=https://pypi.flatt.tech/simple/
 # PATH への ~/.local/bin 追加は .zshenv へ移動（非対話シェルからも見えるようにするため）
