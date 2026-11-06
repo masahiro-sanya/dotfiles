@@ -234,8 +234,10 @@ chandoff() {
 
 # run-pending: Claude Code がこのセッション用に保存したコマンドを 1 回だけ流す。
 # 長いコマンドを画面からコピーすると、字下げのスペースと折り返しの改行が混ざる。
-# それを避けるため、Claude は ~/.claude/pending-cmd/<セッションID>.sh に書き、ユーザーは `! run-pending` と打つ。
-# ファイル名がセッション別なので、他のセッションが保存したコマンドは流れない。
+# それを避けるため、Claude は ~/.claude/pending-cmd/<セッションID>.sh に書き、ユーザーが 2 段階で流す。
+#   `! run-pending`          中身と照合コード（中身のハッシュ先頭 6 桁）を表示するだけで、流さない
+#   `! run-pending <コード>` コードが今の中身と合うときだけ流す
+# 返信の表示ではなくファイルそのものを見てから流すため。見たあとで中身が変わっていたら流れない。
 # 流す前に取り出して消すので、同じコマンドが二度走らない。
 run-pending() {
   if [ -z "${CLAUDE_CODE_SESSION_ID}" ]; then
@@ -247,15 +249,24 @@ run-pending() {
     echo "run-pending: このセッションの保存済みコマンドがありません（${f}）" >&2
     return 1
   fi
-  # 中身を変数に取り出してから流す前に消す。途中で Ctrl-C しても残骸が残らず、二度走らない
-  local cmd
-  cmd="$(<"${f}")" || return 1
-  command rm -f "${f}"
   # 流されないまま終わったセッションの分は 1 日で消す
   # （glob の修飾子はシェルの設定で効かないことがあるので、この中だけ設定を足す）
   () { setopt localoptions nullglob bareglobqual; command rm -f "${HOME}"/.claude/pending-cmd/*.sh(.mh+24) }
-  local sha
+  # 中身を変数に取り出し、照合も実行もこの変数で行う（照合したものと流すものを同じにする）
+  local cmd sha
+  cmd="$(<"${f}")" || return 1
   sha="$(print -rn -- "${cmd}" | shasum -a 256 | cut -c1-12)"
+  if [ -z "${1}" ]; then
+    print -r -- "${cmd}"
+    print -r -- "--- 照合コード: ${sha[1,6]}（中身を確かめて、流すなら ! run-pending ${sha[1,6]}）"
+    return 0
+  fi
+  if [ "${1}" != "${sha[1,6]}" ]; then
+    echo "run-pending: 照合コードが今の中身と合いません。流していません。! run-pending で中身を見直してください" >&2
+    return 1
+  fi
+  # 流す前に消す。途中で Ctrl-C しても残骸が残らず、二度走らない
+  command rm -f "${f}"
   # ガードが止めた操作を人が流す経路なので、ガードと同じログに痕跡を残す
   printf '%s\trun-pending\tuser-ran\tsid=%s sha=%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "${CLAUDE_CODE_SESSION_ID}" "${sha}" "$(print -rn -- "${cmd}" | tr '\n' ' ' | cut -c1-200)" >>| "${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
   print -r -- "+ ${cmd}"
