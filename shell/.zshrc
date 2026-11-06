@@ -247,13 +247,19 @@ run-pending() {
     echo "run-pending: このセッションの保存済みコマンドがありません（${f}）" >&2
     return 1
   fi
-  local tmp="${f}.running.$$"
-  command mv -f "${f}" "${tmp}" || return 1
-  echo "+ $(cat "${tmp}")"
-  ( source "${tmp}" )
-  local rc=$?
-  command rm -f "${tmp}"
-  return ${rc}
+  # 中身を変数に取り出してから流す前に消す。途中で Ctrl-C しても残骸が残らず、二度走らない
+  local cmd
+  cmd="$(<"${f}")" || return 1
+  command rm -f "${f}"
+  # 流されないまま終わったセッションの分は 1 日で消す
+  # （glob の修飾子はシェルの設定で効かないことがあるので、この中だけ設定を足す）
+  () { setopt localoptions nullglob bareglobqual; command rm -f "${HOME}"/.claude/pending-cmd/*.sh(.mh+24) }
+  local sha
+  sha="$(print -rn -- "${cmd}" | shasum -a 256 | cut -c1-12)"
+  # ガードが止めた操作を人が流す経路なので、ガードと同じログに痕跡を残す
+  printf '%s\trun-pending\tuser-ran\tsid=%s sha=%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "${CLAUDE_CODE_SESSION_ID}" "${sha}" "$(print -rn -- "${cmd}" | tr '\n' ' ' | cut -c1-200)" >>| "${GUARD_HITS_LOG:-${HOME}/.claude/guard-hits.log}"
+  print -r -- "+ ${cmd}"
+  ( eval "${cmd}" )
 }
 
 # サプライチェーン攻撃対策: pip を Flatt 管理レジストリ経由に
