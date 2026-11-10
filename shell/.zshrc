@@ -169,7 +169,7 @@ if [[ -t 0 && -t 1 ]]; then
     esac
     local -a name_args model_args
     name_args=(${(f)"$(_claude_auto_name "$@")"})
-    model_args=(${(f)"$(_claude_default_model "$@")"})
+    model_args=(${(f)"$(_claude_start_model "$@")"})
     command claude "${model_args[@]}" "${name_args[@]}" "$@"
   }
 fi
@@ -182,12 +182,13 @@ _claude_is_subcommand() {
   return 1
 }
 
-# 起動のたびに `--model default`（アカウントの既定モデル）を付ける。
+# 起動のたびに `--model opus` を付け、新しいセッションを opus で始める。
 # /model で選んだモデルは settings.json の model に保存され、次の起動にも持ち越される。
 # 付けないと、一度 fable に切り替えたあとの起動・再開がずっと fable のままになる。
+# `--model default` では持ち越しを止められなかった（保存済みの既定で開いた）ので、名前で固定する。
 # モデルを別の手段で決めたとき（--model・--agent・ANTHROPIC_MODEL）・サブコマンド・
 # ヘルプ・バージョン表示のときは何も出さない（--model は他の指定より優先されるため）。
-_claude_default_model() {
+_claude_start_model() {
   local arg
   [[ -n "${ANTHROPIC_MODEL}" ]] && return 0
   _claude_is_subcommand "$1" && return 0
@@ -196,7 +197,7 @@ _claude_default_model() {
       --model|--model=*|--agent|--agent=*|-h|--help|-v|--version) return 0 ;;
     esac
   done
-  print -rl -- --model default
+  print -rl -- --model opus
 }
 
 # 新規の対話セッションに `-n <リポ名>-<連番>` を付ける。
