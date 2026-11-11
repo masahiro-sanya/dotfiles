@@ -151,10 +151,15 @@ Bash ツールはユーザーのプロファイルから初期化された zsh �
 - 仕様が閉じた実装スライスの実行（実装＋自己検証まで。コミット/push はしない）→ **impl-runner**（Sonnet 固定・書き込み可）
 - 差分レビューの一次実行（深刻度順の指摘リストを返す。修正・コミットはしない）→ **review-runner**（Sonnet 固定・read 専用。認証・権限・課金・本番データ・削除・外部送信・DB スキーマ変更/マイグレーション・並行処理/トランザクションのいずれかに触れる差分は、review-runner の結果を main（Opus）が読み直す）
 - PR レビュー指摘の読み取り・構造化（返信はしない）→ **pr-review-triage**（read 専用。書き込みは fix-pr-reviews / main）
-- 広域なコード探索の fan-out → **Explore**（組み込み）
+- 定期点検・リリース後チェックの値の取得（gcloud / bq / gh / curl。判定は main）→ **ops-collector**（Sonnet 固定・read 専用）
+- 中身が確定した Notion ページの編集（N 件の修正を当てる・行を足す）→ **notion-editor**（Sonnet 固定・書き込み可。文面の起草・コメント・列定義の変更は main）
+- 広域なコード探索の fan-out → **Explore**（組み込み）。呼ぶときは `model: "sonnet"` を渡す（渡さないと main のモデルを継ぐ）
 - 現在の文脈を引き継いだ独立・並行作業 → **fork**
 - 上のどれにも当てはまらない汎用タスクのみ → general-purpose
-  - general-purpose に投げがちだった型の振り先: GCP のログ・メトリクス・BigQuery の調査 → gcp-log-investigator／差分を観点別に読む → review-runner（観点をプロンプトで渡す）
+  - general-purpose に投げがちだった型の振り先: GCP のログ・メトリクス・BigQuery の調査 → gcp-log-investigator／点検の観点別取得 → ops-collector／Notion・memory・履歴の読み取り集計 → investigator／Notion の確定した修正の適用 → notion-editor／memory・ファイルの確定した書き換え → impl-runner／差分を観点別に読む → review-runner（観点をプロンプトで渡す）
+  - **スキルの手順が `general-purpose` を指定していても、中身が上の型に当てはまれば振り先のエージェントで起動する**（スキルは起動の型まで最適化していない。取得だけ担う並列 agent は判定を main がやり直すので Sonnet で足りる）
+  - それでも general-purpose を使うときは、取得・集計・定型の書き換えなら `model: "sonnet"` を渡す。main のモデルを継がせるのは、判定の精度そのものが成果になるものだけにする
+  - main のモデルのまま残すもの: `/code-review` が起動するレビュー agent、fork、スキルの挙動テスト（RED/GREEN。モデルの振る舞いそのものを試すため）
 
 運用ルール:
 
