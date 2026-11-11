@@ -146,15 +146,20 @@ Bash ツールはユーザーのプロファイルから初期化された zsh �
 作業を Task に委譲するときは内容に応じて専門エージェントを選ぶ。general-purpose は「どれにも当てはまらない汎用タスク」の最後の受け皿に留める。
 
 - 調査・収集・横断検索（git/PR・Claude セッション・memory・Slack・Notion 読み取り 等）→ **investigator**（read 専用・要約で返す）
-- GCP のログ・監視の調査 → **gcp-log-investigator**（参照専用）
+- GCP のログ・監視の原因の掘り下げ → **gcp-log-investigator**（参照専用）
 - ビルド/テスト/lint の検証（失敗と原因ポインタだけ返す）→ **verify-runner**（read 専用・ソースは編集しない）
 - 仕様が閉じた実装スライスの実行（実装＋自己検証まで。コミット/push はしない）→ **impl-runner**（Sonnet 固定・書き込み可）
 - 差分レビューの一次実行（深刻度順の指摘リストを返す。修正・コミットはしない）→ **review-runner**（Sonnet 固定・read 専用。認証・権限・課金・本番データ・削除・外部送信・DB スキーマ変更/マイグレーション・並行処理/トランザクションのいずれかに触れる差分は、review-runner の結果を main（Opus）が読み直す）
 - PR レビュー指摘の読み取り・構造化（返信はしない）→ **pr-review-triage**（read 専用。書き込みは fix-pr-reviews / main）
-- 広域なコード探索の fan-out → **Explore**（組み込み）
+- 定期点検・リリース後チェックで、決まった項目の値を取る（gcloud / bq / gh / curl。判定は渡した基準に当てはめる分だけ）→ **ops-collector**（Sonnet 固定・read 専用）
+- 中身が確定した Notion ページの編集（N 件の修正を当てる・行を足す）→ **notion-editor**（Sonnet 固定・書き込み可。文面の起草・コメント・列定義の変更は main）
+- 広域なコード探索の fan-out → **Explore**（組み込み）。呼ぶときは `model: "sonnet"` を渡す（渡さないと main のモデルを継ぐ。直近 30 日の Explore は main と同じ Opus で動いていた）
 - 現在の文脈を引き継いだ独立・並行作業 → **fork**
 - 上のどれにも当てはまらない汎用タスクのみ → general-purpose
-  - general-purpose に投げがちだった型の振り先: GCP のログ・メトリクス・BigQuery の調査 → gcp-log-investigator／差分を観点別に読む → review-runner（観点をプロンプトで渡す）
+  - general-purpose に投げがちだった型の振り先: GCP のログ・メトリクス・BigQuery の原因調査 → gcp-log-investigator／点検の観点別取得 → ops-collector／Notion・memory・履歴の読み取り集計 → investigator／Notion の確定した修正の適用 → notion-editor／memory・ファイルの確定した書き換え → impl-runner／差分を観点別に読む → review-runner（観点をプロンプトで渡す）
+  - **スキルの手順が `general-purpose` を指定していても、中身が上の型に当てはまれば振り先のエージェントで起動する**（スキルは起動の型まで最適化していない。取得だけ担う並列 agent は Sonnet で足りる）。返す形式・判定基準はスキルの指示をそのまま振り先に渡す。書き込み可の振り先（notion-editor / impl-runner）は下の運用ルールどおり、ユーザーの指示か承認がある作業に限る（ユーザーが起動したスキルの手順に書かれた書き込みは指示に含む）
+  - それでも general-purpose を使うときは、取得・集計・定型の書き換えなら `model: "sonnet"` を渡す。main のモデルを継がせるのは、判定の精度そのものが成果になるものだけにする
+  - main のモデルのまま残すもの: `/code-review` が起動するレビュー agent、fork、スキルの挙動テスト（RED/GREEN。モデルの振る舞いそのものを試すため）
 
 運用ルール:
 
@@ -164,7 +169,7 @@ Bash ツールはユーザーのプロファイルから初期化された zsh �
 - **書き込みを伴う作業（実装・コミット・push・レビュー返信・リリース操作）は read 専用の調査 agent には投げない**
 - **仕様が閉じた独立実装スライス**（例: テーブル追加＋ハンドラ＋テストの定型）は、superpowers の subagent-driven-development の型で既定 **impl-runner** に切り出す。複数ファイルにまたがる長い実装ループも main（Opus）で書き下さず impl-runner に回す（狙い: 枠を食う実装を Sonnet に逃がし、Opus 枠を設計・監査・レビューに温存。週間/5h 枠が厳しいときは特に積極的に）。フル文脈と人間の舵取りが要る実装だけ main に残す
 - レビューも同様に、差分の重い読み込みと一次指摘出しは **review-runner** に隔離し、main は短い指摘リストの裁定とリスク箇所（要 Opus）に専念する
-- **gcp-log-investigator に投げる前に、main 側で gcloud を 1 回叩いて認証が生きているか確かめる**（サブエージェントは非対話なので再認証プロンプトを出せず、`Reauthentication failed. cannot prompt during non-interactive execution` で即死する。会社アカウントのセッション長ポリシー由来なのでローカル設定では消せない）
+- **gcloud / bq を叩くサブエージェント（gcp-log-investigator / ops-collector）に投げる前に、main 側で gcloud を 1 回叩いて認証が生きているか確かめる**（サブエージェントは非対話なので再認証プロンプトを出せず、`Reauthentication failed. cannot prompt during non-interactive execution` で即死する。会社アカウントのセッション長ポリシー由来なのでローカル設定では消せない）
 - 本番プロジェクトを含む gcloud の出力を整形するときは **python3 ではなく jq** を使う（本番向けのガードは python3 を「GCP に届きうる実行ファイル」として意図的に通さない。直近 60 日の誤ブロック 246 件の大半がこれ。jq・sort・awk 等は通る）
 - **独立した調査・読み取りは複数 Task を 1 メッセージで同時に投げる**（1 本の investigator に多ソースを詰めると中で逐次読みになって遅い。読みが遅いと感じたら本数を増やす／太い 1 本を割る）
 
