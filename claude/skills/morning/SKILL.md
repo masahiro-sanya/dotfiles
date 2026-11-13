@@ -1,7 +1,7 @@
 ---
 name: morning
 description: 朝一ルーチン。Claude Code 更新 → プラグイン更新 → 全プロジェクトのセッション進捗確認（＋Notion 開発タスク一覧）→ 全リポPRレビュー状況（reviewer/reviewee 両方）→ 技術記事フィード収集 → 月次 memory 還流（月初のみ）→ 週次ハーネス健全性（週初のみ・委譲ミックス／guard発火／fail-openの点検）→ 今日の宣言（daily-report 朝モードで宣言を作り投稿）→ 予定に連動する準備（該当の予定がある日だけ）→ 他セッションの開き直し（作業が残るものだけ開き直し、残りは閉じる。本人が起動したときは確認なし。手順 3・4 が返った直後に裏で起動する）を順番に実行する。Use when user says "朝一", "morning", "/morning", "朝のルーチン", "あさいち".
-allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(~/.claude/skills/morning/session-usage.py *), Bash(date +%G-W%V), Bash(gog calendar events primary *), Read, Write, Skill, Task, Agent
+allowed-tools: Bash(claude update), Bash(claude --version), Bash(cat ~/.claude/.morning-prep-last), Bash(cat ~/.claude/daily-report/eval-config.json), Bash(gh search prs *), Bash(gh pr view *), Bash(~/.claude/skills/morning/session-status.py *), Bash(~/.claude/skills/morning/agent-usage.py *), Bash(~/.claude/skills/morning/session-usage.py *), Bash(date +%G-W%V), Bash(gog calendar events primary *), Read, Write, Skill, Task, Agent
 ---
 
 # 朝一ルーチン
@@ -60,8 +60,12 @@ gh search prs --review-requested=@me --state=open --json url,title,author,reposi
   --limit 50
 
 # 自分が author の open PR（自分のPR）
-gh search prs --author=@me --state=open --json url,title,reviewDecision,repository,updatedAt,isDraft \
+gh search prs --author=@me --state=open --json url,title,repository,updatedAt,isDraft \
   --limit 50
+
+# 自分のPR の各 URL について、レビュー状況と最後に動いた人を取る（<url> は 1 件ずつ置き換える。
+# gh search prs は reviewDecision を返せない）
+gh pr view <url> --json reviewDecision,reviews,comments,commits --jq '{rd: .reviewDecision, last: ([(.reviews[]|{who:.author.login,at:.submittedAt,what:("review:"+.state)}), (.comments[]|{who:.author.login,at:.createdAt,what:"comment"}), (.commits[]|{who:(.authors[0].login // "(unlinked)"),at:.committedDate,what:"commit"})] | sort_by(.at) | last)}'
 ```
 
 - スコープは `~/.claude/private/skills/morning.md` に書いてあればそれに従う。無ければ `--owner` で絞らずグローバル検索で良い
@@ -77,7 +81,7 @@ gh search prs --author=@me --state=open --json url,title,reviewDecision,reposito
   URL
 
 ### 自分のPR（自分が author）
-- [リポ名] PR#番号 タイトル — レビュー状況（APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED）/ N日前 [Draft]
+- [リポ名] PR#番号 タイトル — レビュー状況（APPROVED/CHANGES_REQUESTED/REVIEW_REQUIRED/空）/ 最後に動いた人（login と review:<state>/comment/commit の別）/ N日前 [Draft]
   URL
 ```
 
@@ -116,10 +120,10 @@ Skill ツールで `daily-report` を **朝モード**で起動し、次を伝�
 
 - 「morning から連携。**今日のセッション調査・自分のオープン PR・Notion 開発タスク一覧は取得済みなので再取得は不要**」
 - 手順 3 で investigator がまとめた **セッション調査の要約**（どのタスクがどこで止まっているか）
-- 手順 4 で取得した **自分のオープン PR 一覧**（`gh search prs --author=@me` 相当の分）
+- 手順 4 で取得した **自分のオープン PR 一覧**（`gh search prs --author=@me` 相当の分。**レビュー状況（reviewDecision）と最後に動いた人を落とさずに渡す**。daily-report 朝モード step 3 が次の手が誰にあるかを分ける材料）
 - 手順 3 で取得した **Notion「開発タスク一覧」の自分のタスク**（完了予定日昇順の 5 列。daily-report 朝モード step 4 の材料）
 
-今日のカレンダーは渡さない（daily-report 朝モード step 4b が自分で取る）。
+今日のカレンダーと直近 3 日の Slack は渡さない（daily-report 朝モード step 4b・4d が自分で取る）。
 daily-report 側が前日ファイルの「明日やること」＋前日採点を読み合わせ、これらを材料に今日の宣言ドラフトを作る。以降はドラフト提示 → ユーザー承認 → **投稿先チャンネルへ投稿**まで daily-report の標準フローに従う（morning はその結果を最終サマリに載せるだけ）。
 
 - daily-report が使えない・eval-config 未設定などは daily-report 側で ⚠️ 縮退する（morning は止めない・完走優先）。

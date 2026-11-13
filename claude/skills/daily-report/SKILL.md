@@ -1,7 +1,7 @@
 ---
 name: daily-report
 description: 日報サイクル。朝は前日の採点（Notion 評価軸レビュー）と Notion「開発タスク一覧」の自分の担当タスク・今日のカレンダーを踏まえて「今日のタスクと目標」を宣言、日中は宣言との途中経過を確認して軌道修正し、夜は当日の作業実績（コミット・PR 活動・Claude セッション・memory・Slack）をサブエージェントで横断収集して朝の宣言と突き合わせ、アウトカム中心の日報を作る。夜は Notion「開発タスク一覧」の現在地とのずれも列挙する（提示まで。更新は dev-ticket の担当）。夜は加えて評価者目線の辛口採点を専用 Notion ログへ追記する。投稿は承認後のみ。Use when user says "日報", "daily report", "/daily-report", "今日のまとめ", "今日やること", "途中経過", "中間チェック", "日報 昼", "昼チェック", "評価チェック", "評価軸レビュー".
-allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date *), Bash(fd *), Bash(rg *), Bash(git log *), Bash(~/.claude/skills/morning/session-status.py *), Bash(gog calendar events primary *), Bash(gog sheets get *), Bash(gog sheets update *), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
+allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh pr view *), Bash(gh api user *), Bash(jq *), Bash(head *), Bash(cat *), Bash(date *), Bash(fd *), Bash(rg *), Bash(git log *), Bash(~/.claude/skills/morning/session-status.py *), Bash(gog calendar events primary *), Bash(gog sheets get *), Bash(gog sheets update *), Read, Write, mcp__plugin_slack_slack__slack_send_message, mcp__plugin_slack_slack__slack_search_public_and_private, mcp__plugin_slack_slack__slack_read_thread, mcp__notion__notion-query-data-sources, mcp__notion__notion-fetch, mcp__notion__notion-create-pages
 ---
 
 # 日報サイクル
@@ -65,7 +65,18 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq 
      FROM "{log_db}" ORDER BY "実施日" DESC LIMIT 3
      ```
    - 実データの最新 1 行を使う（`📝 記入例`＝実施日が空の行は除外）。読めない / 前日採点が無い時は ⚠️ で明示し、前日ファイルの「明日やること」だけを軸に進める（催促しない）
-3. 自分のオープン PR を確認: `gh search prs --author=@me --state=open --json url,title,repository,updatedAt --limit 30`（**morning 連携時は再取得せず、渡されたオープン PR 一覧を使う**）
+3. 自分のオープン PR を確認し、**PR ごとに次の手が誰にあるかで分ける**（open かどうかだけで宣言に入れない）。**morning 連携時は再取得せず、渡された一覧（reviewDecision と最後に動いた人つき）を使う**。単独のときは次で取る（`gh search prs` は reviewDecision を返せないので、PR ごとに `gh pr view` で取る）:
+   ```bash
+   gh search prs --author=@me --state=open --json url,title,repository,updatedAt,isDraft --limit 30
+   # 上の各 URL について（<url> は 1 件ずつ置き換える）
+   gh pr view <url> --json reviewDecision,reviews,comments,commits --jq '{rd: .reviewDecision, last: ([(.reviews[]|{who:.author.login,at:.submittedAt,what:("review:"+.state)}), (.comments[]|{who:.author.login,at:.createdAt,what:"comment"}), (.commits[]|{who:(.authors[0].login // "(unlinked)"),at:.committedDate,what:"commit"})] | sort_by(.at) | last)}'
+   ```
+   - `APPROVED` → **次の手は自分**（QA 依頼・マージ待ちの解消など）。「レビュー待ち」として待ち行に落とさない
+   - `CHANGES_REQUESTED` で最後に動いたのが他人・bot → **自分の手番**。指摘を直して再依頼を出すまでを宣言に入れる。最後に動いたのが自分（修正 commit・返信）なら、再レビュー待ちとして**待ち行へ**（reviewDecision は再レビューまで CHANGES_REQUESTED のまま残る）
+   - 「自分」は `gh api user --jq .login` の login と `last.who` が一致するかで見る。commit の `who` が `(unlinked)`（メールが GitHub アカウントに紐づかない commit）なら、自分の PR の commit なので自分とみなす
+   - `REVIEW_REQUIRED`（または空）で最後に動いたのが自分 → **待ち行へ**（「〇〇はレビュー待ち」）。自分の作業として宣言に入れない
+   - `REVIEW_REQUIRED`（または空）で最後に動いたのが他人・bot → **自分の手番**（コメントや AI レビューの結果に応える）
+   - Draft は reviewDecision によらず自分の手番
 4. **Notion「開発タスク一覧」の自分のタスクを読む（＝いま実際に抱えている仕事の一次情報）**。日報ファイルと PR だけだと、**まだ着手していないチケット**と**期日が来ているチケット**が宣言から落ちる。
    - eval-config.json の `{task_view_url}` を `notion-query-data-sources` の **view モード**（`{"mode":"view","view_url":"{task_view_url}","page_size":50}`）で引く。担当者とステータスの絞り込みはビュー側に入っているので、ここでフィルタを足さない。設定キーが無ければ ⚠️ でスキップし、step 1・3 の材料だけで宣言を組む（催促しない）
    - **main で直接引かない**（1 行に全プロパティが入るため出力が巨大）。**investigator に委譲**し、`完了予定日 / タスク名 / ステータス / リリース / URL` の 5 列だけ・**完了予定日の昇順**で返させる（**morning 連携時は morning の手順 3 で investigator が取得済みなので再取得しない**）
@@ -81,6 +92,20 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq 
    - 表の「目標」列が目標名、「次の一手」と「期日」がその目標で次にやること
    - 宣言ファイルを新しい順に遡り、直近 3 日分の宣言を読む。`（目標: …）` がどの項目にも付いていない日も 1 日に数える（目標に触れなかった日こそ止まっている根拠なので飛ばさない）。3 日続けてどの項目にも出てこない目標を「止まっている目標」とする
    - `（目標: …）` が 1 つでも付いた最古の宣言より前の日は数えない。そこから 3 日分に満たないときは、この判定をしない（付け始める前の宣言で、全目標が止まって見えるのを防ぐ）
+4d. **直近 3 日の Slack を読む（＝他人と交わした約束と決定の一次情報）**。日報ファイル・PR・Notion には、Slack で自分が約束した期日や、相手から返ってきた「確定です」が載らない。morning 連携時もここで取る（morning は Slack を取らない）。
+   - **investigator に委譲**する（検索結果とスレッドを main の文脈に持ち込まない）。指示は次のとおり:
+     - `slack_search_public_and_private` で 2 本引く。自分の発言（`from:<@自分の user_id> after:<4 日前 YYYY-MM-DD>`）と、自分宛てのメンション（`keywords` に `<@自分の user_id>`、`filters` に `after:<4 日前 YYYY-MM-DD>`。`to:me` は 0 件になるので使わない）。`after:` は指定日を含まないので、4 日前を書くと 3 日前から今日までになる。`sort=timestamp`。user_id はツール説明の `Current logged in user's user_id is …` から取る（公開リポに ID を書かない）
+     - 自分の発言にスレッド返信があれば `slack_read_thread` で読む（「要件は確定です」のような返事は、メンションなしでスレッドに来る）
+     - 次の 3 つに当たるものだけを、1 件 1 行・日付と URL つきで返す。生の検索結果は貼らせない
+       1. **他人と約束した期日**（「〇日に QA 依頼します」「今週中に出します」）。誰に・何を・いつまでか
+       2. **確定済みの事項**（要件・仕様・方針が決まったという返事）。何が決まったか
+       3. **優先度の指示**（「先にこちらを」「〇〇は後回しで」）。誰から・何を
+     - 約束は、後続の自分の発言やスレッドで済んだと分かるもの（「出しました」「依頼しました」）を除く。済んだか分からないものは「済み未確認」と添える
+   - 使い方:
+     - 約束の期日が今日以前のものは、遅延チケット（step 4）と同じく 1 番候補に置く。期日が今週内のものは宣言の材料に入れる
+     - 確定済みの事項に当たるタスクは「確認待ち」「要件待ち」として待ち行に落とさない。次の手は自分にある
+     - 優先度の指示は、前日採点の「明日への一手」より上の根拠にする（依頼元の指示が自分用の採点より優先）
+   - 取れない（MCP 未接続・認証切れ）ときは ⚠️ で 1 行明示し、残りの材料で宣言を組む（止めない）
 5. ドラフトを**提示と同時に当日ファイルへ `## 宣言（下書き）YYYY-MM-DD` として保存**し、ユーザーと 1-2 往復で確定したら見出しを `## 宣言 YYYY-MM-DD` に置き換える（確定前に会話が切れても材料が残る。下書きのままの日は夜モードが下書きと突き合わせる）:
 
 ```
@@ -96,10 +121,11 @@ allowed-tools: Task, Agent, Bash(gh search prs *), Bash(gh api user *), Bash(jq 
 
 目標は「やる」でなく **「どこまで行ったら達成か」** が分かる形で書く（夜の予定比の基準になる）。
 
-- **番号が優先順位**。1 から順に手を付ける前提で並べる（前日採点の「明日への一手」は 1 番に置く。ただし step 4 で遅延チケットが見つかったときは遅延チケットを 1 番・一手を 2 番にする）
+- **番号が優先順位**。1 から順に手を付ける前提で並べる（前日採点の「明日への一手」は 1 番に置く。ただし step 4 で遅延チケットが見つかったとき、step 4d で期日が今日以前の約束か優先度の指示が見つかったときは、それを 1 番・一手を 2 番にする。両方あるときは、期日が古い方を 1 番にする。優先度の指示は期日を今日とみなす）
+- **優先順位の根拠に memory を使うときは、日付の新しいものを優先する**。memory の優先順位は書いた時点のもので、あとから変わる。古い memory と step 4d の Slack・step 4 の Notion が食い違ったら、新しい方に従う。日付はファイルの更新日時で見る（memory の frontmatter に日付の項目は無い）
 - **達成ラインに時刻を付けない**（「〜11:30」のような区切り）。付けても当たらず、当たらない数字は突き合わせの基準にならない。夜は「達成 / 未達」と、番号どおりに着手できたかで測る
 - **（目標: <目標名>）** は step 4c が取れた日だけ付ける。その項目が効く目標を表の「目標」列の名前で書く（複数なら `、` で並べる。どれにも効かなければ付けない）。当日ファイルの宣言にだけ残し、Slack に投稿する文面からは外す（「投稿」の節）
-- **止まっている目標（step 4c）があれば、その目標の「次の一手」を 1 項目入れる**（タスク名は次の一手の中身で書き、目標名を入れない。目標名は `（目標: …）` にだけ置く）。並びは遅延チケット → 前日の「明日への一手」の下。3 項目の上限は守る。4 番目以降に回った項目は宣言に入れず、末尾行に「<目標名> は止まっている（次の一手: …）」の形で 1 行添える（末尾 2 行の上限に含める。目標名が出る行なので Slack には出さない）。止まっている目標が複数なら、期日が近いもの 1 つにする
+- **止まっている目標（step 4c）があれば、その目標の「次の一手」を 1 項目入れる**（タスク名は次の一手の中身で書き、目標名を入れない。目標名は `（目標: …）` にだけ置く）。並びは遅延チケット・step 4d の期日切れの約束と優先度の指示 → 前日の「明日への一手」の下。3 項目の上限は守る。4 番目以降に回った項目は宣言に入れず、末尾行に「<目標名> は止まっている（次の一手: …）」の形で 1 行添える（末尾 2 行の上限に含める。目標名が出る行なので Slack には出さない）。止まっている目標が複数なら、期日が近いもの 1 つにする
 - **持ち越し N 日目** は同じタスクが宣言に載った連続日数（初日は付けない）。**3 日目からは親タスク名のまま再宣言しない**: 今日 1 日で閉じる大きさに切り直す（✗「MySQL 8.4 手順の確定」→ ◎「見積もりを 1 つに決めて Notion 手順書に書く」）か、末尾の待ち行へ落とす。切り直せないなら何を待っているかを末尾行に書く
 
 **分量**: 宣言は **3 項目まで・1 項目 2 行以内**（1 行目にタスクと達成ライン、2 行目は理由が要るときだけ）。
