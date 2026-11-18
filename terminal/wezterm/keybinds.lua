@@ -10,6 +10,21 @@ wezterm.on("update-right-status", function(window, pane)
   window:set_right_status(name or "")
 end)
 
+-- Cmd+A で Ctrl+U を送る回数。1 回で 1 行消えるので、これを超える行数は残る
+local CLEAR_INPUT_KILL_COUNT = 50
+
+-- herdr は Cmd を受け取らないので、WezTerm 側で prefix(Ctrl+b) 列に展開して送る。
+-- herdr の外（素の zsh・nvim・Claude Code）では Ctrl+b が別の操作になるため、
+-- 前面のプロセスが herdr のときだけ送る
+local function herdr_prefixed(key)
+  return wezterm.action_callback(function(window, pane)
+    local process = pane:get_foreground_process_name() or ""
+    if process:match("/herdr$") then
+      window:perform_action(act.SendString("\x02" .. key), pane)
+    end
+  end)
+end
+
 return {
   keys = {
     {
@@ -117,6 +132,21 @@ return {
     { key = "n", mods = "SUPER", action = act.SpawnWindow },
     -- Shift+Enterを透過（Claude Code等で改行に使用）
     { key = "Enter", mods = "SHIFT", action = act.SendString("\n") },
+    -- macOS 風の行編集。Claude Code の入力欄と zsh の emacs キーへ読み替える
+    -- Cmd+← / → = 行頭 / 行末（Ctrl+A / Ctrl+E）
+    { key = "LeftArrow", mods = "SUPER", action = act.SendString("\x01") },
+    { key = "RightArrow", mods = "SUPER", action = act.SendString("\x05") },
+    -- Cmd+Backspace = Ctrl+U。Claude Code では行頭まで、zsh（emacs キー）では行全体を消す
+    { key = "Backspace", mods = "SUPER", action = act.SendString("\x15") },
+    -- Cmd+A = 入力を消す（行末へ移動して Ctrl+U を繰り返す。Claude Code には全選択が無い）
+    -- 複数行の入力では、カーソル行より下の行は残る
+    -- 作業中に押しても止まらないよう Ctrl+C / Esc は使わない。消した分は Ctrl+_ で戻せる
+    { key = "a", mods = "SUPER", action = act.SendString("\x05" .. string.rep("\x15", CLEAR_INPUT_KILL_COUNT)) },
+    -- herdr のペイン移動を 1 打にする。Cmd+h/j/k/l = prefix(Ctrl+b) → h/j/k/l
+    { key = "h", mods = "SUPER", action = herdr_prefixed("h") },
+    { key = "j", mods = "SUPER", action = herdr_prefixed("j") },
+    { key = "k", mods = "SUPER", action = herdr_prefixed("k") },
+    { key = "l", mods = "SUPER", action = herdr_prefixed("l") },
     -- キーテーブル用
     { key = "s", mods = "LEADER", action = act.ActivateKeyTable({ name = "resize_pane", one_shot = false }) },
     {
