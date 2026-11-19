@@ -151,6 +151,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/wezterm-status.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "if [ -f ~/.claude/hooks/inject-judgment-axes.sh ]; then bash ~/.claude/hooks/inject-judgment-axes.sh; fi",
+            "timeout": 5
           }
         ]
       }
