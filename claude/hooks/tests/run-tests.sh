@@ -1340,6 +1340,52 @@ WF_LONG_PATH=$(printf 'abcdefghij1234567890abcdef/%.0s' $(seq 3000))
 assert_out '"ask"' webfetch-guard.sh "数字入りの塊が大量に並ぶ長い URL でも ask（SIGPIPE で判定を落とさない）" "$(fetch_json "https://unknown-blog.example/${WF_LONG_PATH}")"
 assert_out '"allow"' webfetch-guard.sh "prtimes の企業 RSS（クエリ付き）は許可ドメインで allow" "$(fetch_json "https://prtimes.jp/companyrdf.php?company_id=13971")"
 assert 0 webfetch-guard.sh "壊れた入力は fail-open" "not json"
+
+# --- inject-judgment-axes.sh（判断軸を毎回の依頼に差し込む）---
+# 本物の ~/.claude/private/judgment-axes.md は読ませない。テスト用の元ファイルを JUDGMENT_AXES_FILE で渡す
+JA_FILE="${TMP_ROOT}/judgment-axes.md"
+printf '%s\n' '- 判断軸 A' '- "引用符" と \ を含む行' >| "${JA_FILE}"
+JA_OUT="$(cd "${TMP_ROOT}" && echo '{}' | JUDGMENT_AXES_FILE="${JA_FILE}" bash "${HOOKS_DIR}/inject-judgment-axes.sh" 2>/dev/null)"
+JA_RC=$?
+if [ "${JA_RC}" -eq 0 ] \
+    && [ "$(printf '%s' "${JA_OUT}" | jq -r '.hookSpecificOutput.hookEventName' 2>/dev/null)" = "UserPromptSubmit" ] \
+    && [ "$(printf '%s' "${JA_OUT}" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)" = "$(cat "${JA_FILE}")" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 判断軸ファイルの中身をそのまま additionalContext に出す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 判断軸ファイルの中身をそのまま additionalContext に出す (rc=${JA_RC}: ${JA_OUT})"
+fi
+ja_silent() {
+    desc="$1"; shift
+    out="$(cd "${TMP_ROOT}" && echo '{}' | env "$@" bash "${HOOKS_DIR}/inject-judgment-axes.sh" 2>/dev/null)"
+    rc=$?
+    if [ "${rc}" -eq 0 ] && [ -z "${out}" ]; then
+        PASS=$((PASS + 1)); echo "  ok: ${desc}"
+    else
+        FAIL=$((FAIL + 1)); echo "  NG: ${desc} (rc=${rc}: ${out})"
+    fi
+}
+ja_silent "元ファイルが無ければ何も出さず exit 0" JUDGMENT_AXES_FILE="${TMP_ROOT}/no-such-axes.md"
+ja_silent "上限を超えたら何も出さず exit 0" JUDGMENT_AXES_FILE="${JA_FILE}" JUDGMENT_AXES_MAX=10
+: >| "${TMP_ROOT}/empty-axes.md"
+ja_silent "空ファイルなら何も出さず exit 0" JUDGMENT_AXES_FILE="${TMP_ROOT}/empty-axes.md"
+mkdir -p "${TMP_ROOT}/axes-dir"
+ja_silent "元がディレクトリなら何も出さず exit 0" JUDGMENT_AXES_FILE="${TMP_ROOT}/axes-dir"
+printf '%s\n' '- 読めない判断軸' >| "${TMP_ROOT}/unreadable-axes.md"
+chmod 000 "${TMP_ROOT}/unreadable-axes.md"
+command rm -f "${HOOKS_ERROR_LOG}"
+ja_silent "読めないファイルなら何も出さず exit 0" JUDGMENT_AXES_FILE="${TMP_ROOT}/unreadable-axes.md"
+if [ -f "${HOOKS_ERROR_LOG}" ] && /usr/bin/grep -q 'inject-judgment-axes.sh: 読めない' "${HOOKS_ERROR_LOG}"; then
+    PASS=$((PASS + 1)); echo "  ok: 読めないファイルは hooks-error.log に痕跡を残す"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 読めないファイルは hooks-error.log に痕跡を残す"
+fi
+chmod 600 "${TMP_ROOT}/unreadable-axes.md"
+JA_OUT="$(cd "${TMP_ROOT}" && echo '{}' | JUDGMENT_AXES_FILE="${JA_FILE}" JUDGMENT_AXES_MAX=abc bash "${HOOKS_DIR}/inject-judgment-axes.sh" 2>&1)"
+if [ "$(printf '%s' "${JA_OUT}" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null)" = "$(cat "${JA_FILE}")" ]; then
+    PASS=$((PASS + 1)); echo "  ok: 上限が数値でなければ既定の上限で出す（stderr を出さない）"
+else
+    FAIL=$((FAIL + 1)); echo "  NG: 上限が数値でなければ既定の上限で出す (${JA_OUT})"
+fi
 echo ""
 echo "PASS: ${PASS} / FAIL: ${FAIL}"
 [ "${FAIL}" -eq 0 ] || exit 1
