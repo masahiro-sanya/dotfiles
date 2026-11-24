@@ -702,8 +702,31 @@ if [ "$HAS_GH_API_WRITE" -eq 1 ]; then
 fi
 
 # curl/wget によるデータ送信（GET は対象外、POST/PUT 系のみ）
-if echo "$COMMAND" | grep -qiE '(curl\s+.*(-d\s|--data|--data-binary|--data-raw|-F\s)|wget\s+(--post-file|--post-data))'; then
-  block_ask "curl-post" "🌐 curl/wget でのデータ送信(-d / --data / -F / --post-file)を検出。任意ホストへの持ち出し経路になり得ます。${HINT}"
+# curl・wget と同じコマンドの中だけを見る（; && || | と改行で区切る）。後ろの `rm -f` や `cut -d` を拾わないため。
+# 区切りは引用符の外だけで切る（`-H 'Content-Type: text/plain; charset=utf-8' -d @x` を割って -d を見失わないため）。
+# 行末の `\` による行継続は同じコマンドとしてつなぐ。
+# フラグの大文字小文字は区別する。curl の -D はヘッダ保存、-f は失敗時の終了コードで、送信ではない。
+# コマンド名は区別しない（macOS の既定 FS は大文字小文字を区別せず `CURL` でも curl が動く）。
+# 短いフラグは束ねた形（-sd / -sSF）も拾う。-T / --upload-file は PUT のアップロード。
+NET_SEGMENTS=$(printf '%s\n' "${COMMAND}" | awk '
+{
+  line = $0; n = length(line); cont = 0
+  for (i = 1; i <= n; i++) {
+    c = substr(line, i, 1)
+    if (esc) { esc = 0; out = out c; continue }
+    if (c == "\\" && q != "\047") { if (i == n) { cont = 1; continue } esc = 1; out = out c; continue }
+    if (q != "") { if (c == q) q = ""; out = out c; continue }
+    if (c == "\047" || c == "\"") { q = c; out = out c; continue }
+    if (c == ";" || c == "|") { out = out "\n"; continue }
+    if (c == "&" && substr(line, i + 1, 1) == "&") { out = out "\n"; i++; continue }
+    out = out c
+  }
+  if (cont || q != "") { out = out " " } else { out = out "\n" }
+}
+END { printf "%s\n", out }')
+if printf '%s\n' "${NET_SEGMENTS}" | grep -qE '[Cc][Uu][Rr][Ll][[:space:]](.*[[:space:]])?(-[A-Za-z]*[dFT]|--data|--form|--json|--upload-file)' \
+  || printf '%s\n' "${NET_SEGMENTS}" | grep -qiE 'wget[[:space:]].*--(post|body)-(file|data)'; then
+  block_ask "curl-post" "🌐 curl/wget でのデータ送信(-d / --data / --json / -F / -T / --post-file)を検出。任意ホストへの持ち出し経路になり得ます。${HINT}"
 fi
 
 # パイプ → curl/wget
