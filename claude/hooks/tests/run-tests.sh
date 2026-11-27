@@ -394,6 +394,9 @@ assert 2 guard-outbound-comms.sh "クォートしたパスの開き直しスク�
 assert 2 guard-outbound-comms.sh "値を取るオプション付きの bash に渡してもブロック" "$(oc_bash "bash -o pipefail ~/.claude/scripts/herdr-restart-sessions.sh wA:p1")"
 assert 0 guard-outbound-comms.sh "開き直しスクリプトの構文確認（リダイレクト）は許可" "$(oc_bash "bash -n < claude/scripts/herdr-restart-sessions.sh")"
 assert 0 guard-outbound-comms.sh "開き直しスクリプトを読むだけなら許可" "$(oc_bash "rg -n wait claude/scripts/herdr-restart-sessions.sh")"
+# 新しいセッションを開くスクリプトは、自分で作ったペインにしか送らないので承認なしで通す（claude/CLAUDE.md の例外）
+assert 0 guard-outbound-comms.sh "新しいセッションを開くスクリプトは許可" "$(oc_bash "bash ~/.claude/scripts/herdr-open-session.sh ~/src/example/app ./req.md")"
+assert 2 guard-outbound-comms.sh "既にあるペインへの pane run は従来どおりブロック" "$(oc_bash "herdr pane run wA:p1 'claude -n x-1'")"
 
 # 「コマンド位置」の取りこぼしによる迂回（AI レビューで発覚）。
 # 素のラッパー形だけを固定していると、フラグ 1 個・キーワード 1 個で穴が再び開くので、
